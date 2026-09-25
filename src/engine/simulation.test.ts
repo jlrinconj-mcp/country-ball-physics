@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSimulation, listModes, modeDefaults } from "@/modes";
+import { previewSequence, RACE_SCENARIOS } from "@/modes/race";
 import { DEFAULT_CONFIG } from "./defaults";
 import type { SimulationEvents } from "./simulation";
 import { makeTestCountries } from "./testing";
@@ -155,5 +156,29 @@ describe("every mode and scenario", () => {
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(a.ranking.map((r) => r.place)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
     expect(a.ranking[0]?.cca3).toBe(a.winner.cca3);
+  });
+});
+
+describe("custom tracks", () => {
+  const base = (): SimulationConfig => ({
+    ...DEFAULT_CONFIG,
+    ...modeDefaults("race"),
+    seed: "custom-track",
+    countries: codes.slice(0, 8),
+    maxParticipants: 8,
+  });
+
+  it("builds the requested module sequence", () => {
+    const sim = createSimulation({ ...base(), track: { sequence: ["wheel", "zigzag", "not-a-module"] } }, countries);
+    expect(sim.layout.modules?.map((m) => m.kind)).toEqual(["start", "wheel", "zigzag", "final-drop", "finish"]);
+    expect(sim.runToEnd()?.winner).toBeDefined();
+    sim.destroy();
+  });
+
+  it("previews the same sequence the simulation generates", () => {
+    const sim = createSimulation(base(), countries);
+    const built = sim.layout.modules?.map((m) => m.kind).slice(1, -2);
+    expect(previewSequence(RACE_SCENARIOS, sim.scenario, "custom-track")).toEqual(built);
+    sim.destroy();
   });
 });

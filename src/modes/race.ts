@@ -2,8 +2,13 @@ import type { CountryBall } from "@/entities/CountryBall";
 import { TICK_RATE } from "@/engine/physicsWorld";
 import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
 import type { WorldLayout } from "@/engine/types";
+import { createRandom } from "@/engine/random";
 import { generateTrack } from "@/tracks/generator";
-import type { ModuleKind, TrackDefinition } from "@/tracks/types";
+import { MIDDLE_MODULES, type ModuleKind, type TrackDefinition } from "@/tracks/types";
+
+function isMiddleModule(kind: string): kind is ModuleKind {
+  return (MIDDLE_MODULES as readonly string[]).includes(kind);
+}
 import { autoRadius } from "./shared";
 
 export interface RaceScenario {
@@ -60,14 +65,16 @@ export function createRaceMode(options: {
       return autoRadius(1000 * 420, count, 0.3, 11, options.maxRadius ?? 28);
     },
 
-    createLayout({ scenario, random, count, ballRadius }) {
+    createLayout({ scenario, random, count, ballRadius, track: custom }) {
       const s = scenarioById(scenario);
+      const sequence = custom?.sequence.filter(isMiddleModule);
       const track = generateTrack(random.seed, {
         length: s.length,
         pool: s.pool,
+        sequence: sequence?.length ? sequence : undefined,
         ballRadius,
         count,
-        difficulty: s.difficulty,
+        difficulty: custom?.difficulty ?? s.difficulty,
       });
       return trackLayout(track);
     },
@@ -170,3 +177,13 @@ export const race = createRaceMode({
   headline: "WHO WILL WIN THE RACE?",
   scenarios: RACE_SCENARIOS,
 });
+
+/** The module sequence a seed would generate for a scenario (editor preview). */
+export function previewSequence(scenarios: RaceScenario[], scenarioId: string, seed: string): ModuleKind[] {
+  const s = scenarios.find((x) => x.id === scenarioId) ?? scenarios[0];
+  if (!s) return [];
+  const layoutSeed = createRandom(seed).fork("layout").seed;
+  return generateTrack(layoutSeed, { length: s.length, pool: s.pool, ballRadius: 20, count: 1 })
+    .modules.map((m) => m.kind)
+    .filter(isMiddleModule);
+}

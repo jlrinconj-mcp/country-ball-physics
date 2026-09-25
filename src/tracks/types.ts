@@ -19,6 +19,9 @@ export const MODULE_KINDS = [
 
 export type ModuleKind = (typeof MODULE_KINDS)[number];
 
+/** Modules that can go between the start gate and the final drop. */
+export const MIDDLE_MODULES = MODULE_KINDS.filter((k) => k !== "start" && k !== "final-drop" && k !== "finish");
+
 /** What a module builder gets: where it starts and the seeded randomness to use. */
 export interface ModuleContext {
   random: Random;

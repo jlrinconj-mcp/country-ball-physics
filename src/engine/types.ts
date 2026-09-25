@@ -148,4 +148,9 @@ export interface SimulationConfig {
    * to a final. Orchestrated by `Tournament`; a single Simulation ignores it.
    */
   tournament?: { size: 8 | 16 | 32 | 64 };
+  /**
+   * Custom track (race modes): module sequence between start and finish, in
+   * order. Geometry inside each module is still generated from the seed.
+   */
+  track?: { sequence: string[]; difficulty?: number };
 }

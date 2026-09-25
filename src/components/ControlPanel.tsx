@@ -10,6 +10,7 @@ import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
 import { PresetChips, type SelectionState } from "./CountrySelector";
+import { TrackEditor } from "./TrackEditor";
 import { Button, Field, Section, Segmented, Select, Slider, Toggle } from "./ui";
 
 export const CAMERA_OPTIONS: { value: CameraMode; label: string }[] = [
@@ -64,7 +65,7 @@ export function ControlPanel({
               onConfig({ ...config, tournament: { size: 16 }, seed: generateSeed("cup") });
               return;
             }
-            onConfig({ ...config, ...modeDefaults(id), tournament: undefined, seed: generateSeed(seedPrefix(id)) });
+            onConfig({ ...config, ...modeDefaults(id), tournament: undefined, track: undefined, seed: generateSeed(seedPrefix(id)) });
             onDisplay({ ...display, camera: getMode(id).defaultCamera });
           }}
         />
@@ -84,7 +85,7 @@ export function ControlPanel({
               value={config.mode}
               options={listModes().map((m) => ({ value: m.id, label: m.label }))}
               onChange={(id) => {
-                onConfig({ ...config, ...modeDefaults(id), tournament });
+                onConfig({ ...config, ...modeDefaults(id), tournament, track: undefined });
                 onDisplay({ ...display, camera: getMode(id).defaultCamera });
               }}
             />
@@ -99,6 +100,8 @@ export function ControlPanel({
         />
         {scenario && <p className="text-xs text-zinc-500">{scenario.description}</p>}
       </Section>
+
+      {(config.mode === "race" || config.mode === "marble-race") && <TrackEditor config={config} onConfig={onConfig} />}
 
       <Section
         title="Countries"

@@ -52,6 +52,8 @@ export interface LayoutContext {
   random: Random;
   count: number;
   ballRadius: number;
+  /** Custom track, if the config has one (race modes). */
+  track?: SimulationConfig["track"];
 }
 
 export interface ModeRules {
@@ -180,6 +182,7 @@ export class Simulation {
       random: this.random.fork("layout"),
       count,
       ballRadius: this.ballRadius,
+      track: config.track,
     });
 
     for (const spec of this.layout.obstacles) this.addObstacle(spec);
