@@ -22,6 +22,22 @@ export interface SpriteStyle {
   shading: boolean;
 }
 
+/**
+ * Flags whose key emblem sits near the hoist (canton, stars, hoist triangle).
+ * A centre crop would cut it, so the crop shifts toward the hoist instead.
+ */
+const HOIST_WEIGHTED = new Set(
+  (
+    "US CN AU NZ TW MY LR UY GR CL TG WS TV FJ CK NU PH CZ CU BS JO SD PS TL GQ DJ ZW MZ ER ST SS KW AE BH QA " +
+    "PR KY BM VG FK MS TC SH AI IO GS HM"
+  ).split(" "),
+);
+
+/** Horizontal crop anchor: 0 = hoist edge, 0.5 = centre. */
+export function cropAnchor(cca2: string): number {
+  return HOIST_WEIGHTED.has(cca2.toUpperCase()) ? 0.18 : 0.5;
+}
+
 /** Decoded flag images, shared across simulations so replays don't refetch. */
 const imageCache = new Map<string, Promise<FlagImage | null>>();
 
@@ -145,7 +161,7 @@ export class FlagAtlas {
       const w = image.width * scale;
       const h = image.height * scale;
       ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(image, (size - w) / 2, (size - h) / 2, w, h);
+      ctx.drawImage(image, (size - w) * cropAnchor(country.cca2), (size - h) / 2, w, h);
     } else {
       const hue = hashString(country.cca3) % 360;
       ctx.fillStyle = `hsl(${hue} 55% 48%)`;

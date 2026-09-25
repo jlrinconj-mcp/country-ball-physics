@@ -52,15 +52,15 @@ export function drawHud(
   y += 58 * unit;
   drawCounter(ctx, `${info.counterLabel}: `, String(info.counterValue), width / 2, y, 40 * unit, theme, textWidth);
 
-  if (display.feed && sim.status !== "finished") {
-    drawFeed(ctx, frame, width / 2, y + 54 * unit, unit, theme, atlas, now, textWidth);
+  // One line under the counter: the latest event, otherwise the leader.
+  const slotY = y + 54 * unit;
+  const showedFeed = display.feed && sim.status !== "finished" && drawFeed(ctx, frame, width / 2, slotY, unit, theme, atlas, now, textWidth);
+  if (!showedFeed && info.showLeader && sim.leader && sim.status === "running") {
+    const pulse = Math.max(0, 1 - (now - frame.hud.leaderTick * TICK_DT) / 0.6);
+    drawLeader(ctx, sim.leader, width / 2, slotY, unit, theme, atlas, pulse);
   }
 
-  if (info.showLeader && sim.leader && sim.status === "running") {
-    y += 66 * unit;
-    const pulse = Math.max(0, 1 - (now - frame.hud.leaderTick * TICK_DT) / 0.6);
-    drawLeader(ctx, sim.leader, width / 2, y, unit, theme, atlas, pulse);
-  }
+  if (info.banner) drawBanner(ctx, info.banner, format, unit, theme, now);
 
   // Timer, top-left of the safe area.
   const clock = sim.finishedTick !== null ? sim.finishedTick * TICK_DT : now;
@@ -175,11 +175,11 @@ function drawFeed(
   atlas: FlagAtlas,
   now: number,
   maxWidth: number,
-): void {
+): boolean {
   const item = frame.hud.feed.findLast((f) => f.kind !== "leader");
-  if (!item) return;
+  if (!item) return false;
   const age = now - item.tick * TICK_DT;
-  if (age < 0 || age > FEED_SECONDS) return;
+  if (age < 0 || age > FEED_SECONDS) return false;
   const size = 32 * unit;
   const text = `${item.ball.name.toUpperCase()} ${item.kind === "finished" ? `FINISHED #${item.ball.place}` : "IS OUT"}`;
   ctx.font = font(size, 800);
@@ -193,6 +193,24 @@ function drawFeed(
     color: item.kind === "finished" ? theme.accent : "#ff8a80",
     align: "left",
     maxWidth: maxWidth - 60 * unit,
+  });
+  ctx.globalAlpha = 1;
+  return true;
+}
+
+/** Big centred text (countdown, "GO!"): pops in at the start of each second. */
+function drawBanner(ctx: CanvasRenderingContext2D, text: string, format: FormatSpec, unit: number, theme: RenderTheme, now: number): void {
+  const safe = safeRect(format);
+  const phase = now % 1;
+  const scale = 1 + Math.max(0, 0.25 - phase) * 1.6;
+  ctx.globalAlpha = Math.min(1, 0.35 + (1 - phase));
+  drawText(ctx, text, format.width / 2, safe.y + safe.h * 0.55, {
+    size: 220 * unit * scale,
+    weight: 900,
+    color: theme.accent,
+    shadow: theme.textShadow,
+    stroke: theme.id === "midnight" ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.7)",
+    strokeWidth: 14 * unit,
   });
   ctx.globalAlpha = 1;
 }

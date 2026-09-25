@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSimulation } from "@/modes";
+import { createSimulation, modeDefaults } from "@/modes";
 import { DEFAULT_CONFIG } from "./defaults";
 import type { SimulationEvents } from "./simulation";
 import { makeTestCountries } from "./testing";
@@ -91,6 +91,49 @@ describe("Simulation (Last Country Standing)", () => {
     expect(sim.balls).toHaveLength(200);
     // Generous bound for CI machines; typically ~1–3 ms.
     expect(msPerTick).toBeLessThan(16);
+    sim.destroy();
+  });
+});
+
+describe("Simulation (Race)", () => {
+  const raceConfig = (seed: string): SimulationConfig => ({
+    ...config({ seed }),
+    ...modeDefaults("race"),
+    seed,
+    countries: codes.slice(0, 16),
+    maxParticipants: 16,
+    scenario: "sprint",
+  });
+
+  it("is deterministic and finishes with a podium", () => {
+    const a = run(raceConfig("race-1"));
+    const b = run(raceConfig("race-1"));
+    expect(b.fingerprint).toBe(a.fingerprint);
+    const finished = a.ranking.filter((r) => r.status === "finished");
+    expect(finished.length).toBeGreaterThanOrEqual(1);
+    expect(a.ranking[0]?.cca3).toBe(a.winner.cca3);
+    expect(a.ranking[0]?.status).toBe("finished");
+    expect(a.ranking.map((r) => r.place)).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+  });
+
+  it("tracks the leader and emits leader events", () => {
+    const sim = createSimulation(raceConfig("race-leader"), countries);
+    let changes = 0;
+    sim.events.on("leaderChanged", () => changes++);
+    sim.runToEnd();
+    expect(changes).toBeGreaterThan(0);
+    expect(sim.result?.timeline.some((e) => e.type === "leader")).toBe(true);
+    sim.destroy();
+  });
+
+  it("keeps balls behind the gate until it opens", () => {
+    const sim = createSimulation(raceConfig("race-gate"), countries);
+    const gate = (sim.layout.gateOpensAt ?? 0) * 60;
+    const startY = Math.max(...sim.balls.map((b) => b.y));
+    for (let i = 0; i < gate - 5; i++) sim.step();
+    const deepest = Math.max(...sim.balls.map((b) => b.y));
+    expect(deepest).toBeLessThan(sim.layout.startY! + 40);
+    expect(deepest).toBeGreaterThanOrEqual(startY - 200);
     sim.destroy();
   });
 });

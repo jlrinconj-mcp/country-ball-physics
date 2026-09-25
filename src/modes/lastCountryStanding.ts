@@ -61,6 +61,7 @@ export const lastCountryStanding: ModeDefinition = {
   ],
   defaultCamera: "fixed",
   defaultParticipants: 48,
+  defaultDuration: 90,
 
   autoBallRadius(count, scenario) {
     const fill = scenario === "ring" ? 0.3 : 0.24;

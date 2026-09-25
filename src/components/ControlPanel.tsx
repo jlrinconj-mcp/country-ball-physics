@@ -4,8 +4,7 @@ import type { Country } from "@/countries/countryTypes";
 import { generateSeed } from "@/engine/random";
 import type { CameraMode } from "@/engine/simulation";
 import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
-import { DEFAULT_PHYSICS } from "@/engine/defaults";
-import { getMode, listModes } from "@/modes";
+import { getMode, listModes, modeDefaults } from "@/modes";
 import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
@@ -56,15 +55,8 @@ export function ControlPanel({
           value={config.mode}
           options={listModes().map((m) => ({ value: m.id, label: m.label }))}
           onChange={(id) => {
-            const next = getMode(id);
-            onConfig({
-              ...config,
-              mode: id,
-              scenario: next.scenarios[0]?.id ?? "default",
-              maxParticipants: next.defaultParticipants,
-              seed: generateSeed(seedPrefix(id)),
-            });
-            onDisplay({ ...display, camera: next.defaultCamera });
+            onConfig({ ...config, ...modeDefaults(id), seed: generateSeed(seedPrefix(id)) });
+            onDisplay({ ...display, camera: getMode(id).defaultCamera });
           }}
         />
         <p className="text-xs leading-relaxed text-zinc-500">{mode.description}</p>
@@ -124,7 +116,7 @@ export function ControlPanel({
       <Section
         title="Physics"
         aside={
-          <button type="button" onClick={() => onConfig({ ...config, physics: DEFAULT_PHYSICS })} className="text-xs text-zinc-500 hover:text-zinc-300">
+          <button type="button" onClick={() => onConfig({ ...config, physics: modeDefaults(config.mode).physics })} className="text-xs text-zinc-500 hover:text-zinc-300">
             Reset
           </button>
         }

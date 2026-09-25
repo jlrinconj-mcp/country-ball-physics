@@ -51,10 +51,10 @@ export class CanvasRenderer {
     this.drawBackground(format.width, format.height, theme);
 
     const view = camera.visibleWorld();
-    const { content } = camera.getViewport();
+    const anchor = camera.anchor();
     const { x, y, zoom } = camera.pose;
     ctx.save();
-    ctx.translate(content.x + content.w / 2, content.y + content.h / 2);
+    ctx.translate(anchor.x, anchor.y);
     ctx.scale(zoom, zoom);
     ctx.translate(-x, -y);
 
@@ -65,7 +65,10 @@ export class CanvasRenderer {
 
     ctx.restore();
 
-    if (display.hud) drawHud(ctx, frame, format, theme, this.atlas);
+    if (display.hud) {
+      this.drawScrim(format.width, camera.getViewport().content.y + 40, theme);
+      drawHud(ctx, frame, format, theme, this.atlas);
+    }
     if (display.safeArea) this.drawSafeArea(format.width, format.height, safeRect(format));
   }
 
@@ -77,6 +80,17 @@ export class CanvasRenderer {
     glow.addColorStop(0, theme.backgroundGlow);
     glow.addColorStop(1, theme.background);
     ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  /** Soft fade behind the HUD so text stays readable over moving scenery. */
+  private drawScrim(width: number, height: number, theme: RenderTheme): void {
+    const ctx = this.ctx;
+    const scrim = ctx.createLinearGradient(0, 0, 0, height);
+    scrim.addColorStop(0, withAlpha(theme.background, 0.92));
+    scrim.addColorStop(0.7, withAlpha(theme.background, 0.7));
+    scrim.addColorStop(1, withAlpha(theme.background, 0));
+    ctx.fillStyle = scrim;
     ctx.fillRect(0, 0, width, height);
   }
 
@@ -264,6 +278,12 @@ export class CanvasRenderer {
     ctx.strokeRect(safe.x, safe.y, safe.w, safe.h);
     ctx.restore();
   }
+}
+
+/** "#rrggbb" + alpha → rgba(). */
+function withAlpha(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
 function lerp(a: number, b: number, t: number): number {

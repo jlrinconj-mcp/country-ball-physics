@@ -7,7 +7,7 @@ import { EventBus } from "./events";
 import { PhysicsWorld, SUBSTEPS, TICK_DT, TICK_RATE } from "./physicsWorld";
 import { createRandom, hashString, type Random } from "./random";
 import { spawnPoints } from "./spawn";
-import type { ModeId, ObstacleSpec, SimulationConfig, Vec2, WorldLayout } from "./types";
+import type { ModeId, ObstacleSpec, PhysicsSettings, SimulationConfig, Vec2, WorldLayout } from "./types";
 
 export type CameraMode = "fixed" | "follow-leader" | "follow-action" | "follow-group";
 
@@ -25,6 +25,8 @@ export interface ModeHud {
   showLeader: boolean;
   /** Optional line such as "ROUND 2/5". */
   status?: string;
+  /** Big centred text (countdowns, "GO!", "ROUND 2"). */
+  banner?: string;
 }
 
 /** A game mode: builds a world and supplies the rules that run each tick. */
@@ -36,6 +38,10 @@ export interface ModeDefinition {
   defaultCamera: CameraMode;
   /** Suggested participant count for this mode. */
   defaultParticipants: number;
+  /** Physics tuned for this mode, applied over the global defaults. */
+  recommendedPhysics?: Partial<PhysicsSettings>;
+  /** Suggested time limit in seconds. */
+  defaultDuration?: number;
   autoBallRadius(count: number, scenario: string): number;
   createLayout(ctx: LayoutContext): WorldLayout;
   createRules(sim: Simulation): ModeRules;

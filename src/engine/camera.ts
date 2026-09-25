@@ -64,22 +64,28 @@ export class Camera {
     };
   }
 
+  /**
+   * Screen point the camera's pose maps to: horizontally the frame centre
+   * (safe areas are asymmetric, framing shouldn't be), vertically the centre
+   * of the content area (below the HUD, above captions).
+   */
+  anchor(): { x: number; y: number } {
+    const { width, content } = this.viewport;
+    return { x: width / 2, y: content.y + content.h / 2 };
+  }
+
   /** Transform a world point into virtual screen pixels. */
   worldToScreen(x: number, y: number): { x: number; y: number } {
-    const { content } = this.viewport;
-    return {
-      x: content.x + content.w / 2 + (x - this.pose.x) * this.pose.zoom,
-      y: content.y + content.h / 2 + (y - this.pose.y) * this.pose.zoom,
-    };
+    const a = this.anchor();
+    return { x: a.x + (x - this.pose.x) * this.pose.zoom, y: a.y + (y - this.pose.y) * this.pose.zoom };
   }
 
   /** Visible world rectangle (whole output, not just the content area). */
   visibleWorld(): Rect {
-    const { width, height, content } = this.viewport;
+    const { width, height } = this.viewport;
     const { x, y, zoom } = this.pose;
-    const left = x - (content.x + content.w / 2) / zoom;
-    const top = y - (content.y + content.h / 2) / zoom;
-    return { x: left, y: top, w: width / zoom, h: height / zoom };
+    const a = this.anchor();
+    return { x: x - a.x / zoom, y: y - a.y / zoom, w: width / zoom, h: height / zoom };
   }
 
   private target(sim: Simulation, alpha: number): CameraPose {
@@ -124,13 +130,12 @@ export class Camera {
     return this.clamp({ x, y: box.y + box.h / 2 + lookAhead, zoom }, bounds);
   }
 
+  /** Keep the world's edges inside the content area (no empty space inside it). */
   private clamp(pose: CameraPose, bounds: Rect): CameraPose {
-    const { content } = this.viewport;
     const halfW = this.viewport.width / 2 / pose.zoom;
-    const above = (content.y + content.h / 2) / pose.zoom;
-    const below = (this.viewport.height - content.y - content.h / 2) / pose.zoom;
+    const halfH = this.viewport.content.h / 2 / pose.zoom;
     const x = clampRange(pose.x, bounds.x + halfW, bounds.x + bounds.w - halfW);
-    const y = clampRange(pose.y, bounds.y + above, bounds.y + bounds.h - below);
+    const y = clampRange(pose.y, bounds.y + halfH, bounds.y + bounds.h - halfH);
     return { x, y, zoom: pose.zoom };
   }
 }

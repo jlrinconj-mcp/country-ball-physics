@@ -49,7 +49,9 @@ export type ObstacleStyle =
 /** Scripted (kinematic) motion. Transforms are absolute functions of time. */
 export type MotionSpec =
   | { type: "rotate"; speed: number; pivot: Vec2; phase?: number }
-  | { type: "oscillate"; axis: Vec2; amplitude: number; period: number; phase?: number };
+  | { type: "oscillate"; axis: Vec2; amplitude: number; period: number; phase?: number }
+  /** One-shot move by `offset`, starting at `start` seconds (gates, trapdoors). */
+  | { type: "slide"; offset: Vec2; start: number; duration: number };
 
 export interface ObstacleSpec {
   id: string;
@@ -100,6 +102,10 @@ export interface WorldLayout {
   finishY?: number;
   /** Start line for progress normalization. */
   startY?: number;
+  /** Race layouts: when the start gate opens (seconds). */
+  gateOpensAt?: number;
+  /** Track layouts: the modules it was built from (for HUD, debugging, editor). */
+  modules?: { kind: string; y: number; height: number }[];
 }
 
 export type ModeId = "last-country-standing" | "race" | "elimination-drop" | "marble-race";

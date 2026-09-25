@@ -5,10 +5,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { Camera } from "../src/engine/camera";
-import { DEFAULT_CONFIG, DEFAULT_PHYSICS } from "../src/engine/defaults";
+import { DEFAULT_CONFIG } from "../src/engine/defaults";
 import { TICK_RATE } from "../src/engine/physicsWorld";
 import type { ModeId } from "../src/engine/types";
-import { createSimulation } from "../src/modes";
+import { createSimulation, modeDefaults } from "../src/modes";
 import { CanvasRenderer } from "../src/render/canvasRenderer";
 import { DEFAULT_DISPLAY, type DisplayOptions } from "../src/render/displayOptions";
 import { FlagAtlas } from "../src/render/flagAtlas";
@@ -42,12 +42,11 @@ const mode = values.mode as ModeId;
 const sim = createSimulation(
   {
     ...DEFAULT_CONFIG,
-    mode,
-    scenario: values.scenario || "",
+    ...modeDefaults(mode),
     seed: values.seed,
     countries: countries.map((c) => c.cca3),
     maxParticipants: Number(values.count),
-    physics: DEFAULT_PHYSICS,
+    scenario: values.scenario || modeDefaults(mode).scenario,
   },
   countries,
 );

@@ -87,6 +87,15 @@ export class Obstacle {
         angle: this.baseAngle + theta,
       };
     }
+    if (motion.type === "slide") {
+      const t = Math.min(1, Math.max(0, (time - motion.start) / motion.duration));
+      const eased = t * t * (3 - 2 * t);
+      return {
+        x: this.origin.x + motion.offset.x * eased,
+        y: this.origin.y + motion.offset.y * eased,
+        angle: this.baseAngle,
+      };
+    }
     const offset =
       motion.amplitude * Math.sin((Math.PI * 2 * time) / motion.period + (motion.phase ?? 0));
     return {
