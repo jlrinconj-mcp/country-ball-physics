@@ -39,7 +39,12 @@ export function LivePanel({ snapshot, countries }: { snapshot: ControllerSnapsho
             <div className="min-w-0">
               <p className="truncate text-lg font-semibold">{winner.name}</p>
               <p className="text-xs text-zinc-500">
-                {result.decidedBy === "timeout" ? "Decided at the time limit" : "Last one standing"} ·{" "}
+                {result.decidedBy === "timeout"
+                  ? "Decided at the time limit"
+                  : result.mode === "race" || result.mode === "marble-race"
+                    ? "First across the line"
+                    : "Last one standing"}{" "}
+                ·{" "}
                 {result.seconds.toFixed(1)}s
               </p>
             </div>

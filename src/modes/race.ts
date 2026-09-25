@@ -144,6 +144,8 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
 
     progress,
 
+    leaderActive: () => sim.time >= gateOpensAt + 0.5,
+
     hud() {
       const t = sim.time;
       const opens = gateOpensAt;

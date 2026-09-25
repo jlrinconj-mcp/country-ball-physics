@@ -75,6 +75,7 @@ export function CountrySelector({
   onChange: (state: SelectionState) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [continent, setContinent] = useState<Continent | "all">("all");
   const [region, setRegion] = useState<string>("all");
@@ -83,7 +84,11 @@ export function CountrySelector({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // showModal focuses the first button; searching is what people want.
+      searchRef.current?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
@@ -180,11 +185,11 @@ export function CountrySelector({
 
         <div className="space-y-3 border-b border-white/[0.06] px-5 py-4">
           <input
+            ref={searchRef}
             className="input"
             placeholder="Search countries (name or ISO code)…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            autoFocus
           />
           <PresetChips countries={countries} state={state} onChange={onChange} />
           <div className="flex flex-wrap items-center gap-2">

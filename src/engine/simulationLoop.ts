@@ -7,8 +7,14 @@ export interface LoopHooks {
   render(alpha: number, dt: number): void;
 }
 
-/** Most ticks run in one frame before we drop time (avoids a death spiral). */
-const MAX_TICKS_PER_FRAME = 12;
+/** Real time credited per frame at most; longer stalls (tab switches) are dropped. */
+const MAX_FRAME_SECONDS = 0.5;
+/**
+ * CPU time a frame may spend catching up on ticks. A time budget (rather
+ * than a tick count) keeps playback real-time on slow or throttled frames
+ * while avoiding a death spiral when the machine can't keep up.
+ */
+const STEP_BUDGET_MS = 30;
 
 /**
  * Fixed-timestep loop with an accumulator. Real time only decides *how many*
@@ -51,21 +57,24 @@ export class SimulationLoop {
 
   private readonly frame = (now: number): void => {
     if (!this.running) return;
-    const dt = Math.min(0.25, Math.max(0, (now - this.last) / 1000));
+    const dt = Math.min(MAX_FRAME_SECONDS, Math.max(0, (now - this.last) / 1000));
     this.last = now;
 
     if (!this.paused) {
       this.accumulator += dt * this.speed;
-      let ticks = 0;
-      while (this.accumulator >= TICK_DT && ticks < MAX_TICKS_PER_FRAME) {
+      const started = performance.now();
+      while (this.accumulator >= TICK_DT) {
         if (!this.hooks.step()) {
           this.accumulator = 0;
           break;
         }
         this.accumulator -= TICK_DT;
-        ticks++;
+        if (performance.now() - started > STEP_BUDGET_MS) {
+          // Can't keep up: drop the backlog instead of spiralling.
+          this.accumulator = Math.min(this.accumulator, TICK_DT);
+          break;
+        }
       }
-      if (ticks === MAX_TICKS_PER_FRAME) this.accumulator = Math.min(this.accumulator, TICK_DT);
     }
 
     const alpha = this.paused ? 1 : Math.min(1, this.accumulator / TICK_DT);

@@ -29,6 +29,12 @@ export function drawHud(
   const unit = Math.min(width, format.height) / 1080;
   const shadow = theme.textShadow;
 
+  if (sim.status === "finished" && sim.winner && sim.finishedTick !== null) {
+    // The winner card owns the screen; the live HUD would only clash with it.
+    drawWinner(ctx, sim.winner, now - sim.finishedTick * TICK_DT, format, unit, theme, atlas, sim.decidedBy, frame.overlay?.winnerTitle ?? "WINNER", frame.overlay?.status);
+    return;
+  }
+
   let y = safe.y + 8 * unit;
   const status = [frame.overlay?.status, info.status].filter(Boolean).join(" · ");
   if (status) {
@@ -77,9 +83,6 @@ export function drawHud(
   }
 
 
-  if (sim.status === "finished" && sim.winner && sim.finishedTick !== null) {
-    drawWinner(ctx, sim.winner, now - sim.finishedTick * TICK_DT, format, unit, theme, atlas, sim.decidedBy, frame.overlay?.winnerTitle ?? "WINNER");
-  }
 }
 
 function drawCounter(
@@ -226,6 +229,7 @@ function drawWinner(
   atlas: FlagAtlas,
   decidedBy: string,
   title: string,
+  context?: string,
 ): void {
   const { width, height } = format;
   const safe = safeRect(format);
@@ -236,7 +240,8 @@ function drawWinner(
   ctx.globalAlpha = Math.min(1, t * 3);
 
   const cy = safe.y + safe.h * 0.45;
-  const radius = Math.min(safe.w, safe.h) * 0.24 * easeOutBack(Math.min(1, t / 0.7));
+  const size = Math.min(safe.w, safe.h) * (format.width > format.height ? 0.2 : 0.24);
+  const radius = size * easeOutBack(Math.min(1, t / 0.7));
   if (radius > 1) {
     ctx.save();
     ctx.shadowColor = "rgba(0,0,0,0.45)";
@@ -244,7 +249,10 @@ function drawWinner(
     drawBallIcon(ctx, atlas, winner, width / 2, cy, radius);
     ctx.restore();
   }
-  const full = Math.min(safe.w, safe.h) * 0.24;
+  const full = size;
+  if (context) {
+    drawText(ctx, context, width / 2, cy - full - 110 * unit, { size: 30 * unit, color: theme.textMuted, letterSpacing: 4 * unit });
+  }
   drawText(ctx, title, width / 2, cy - full - 44 * unit, {
     size: 54 * unit,
     weight: 900,
