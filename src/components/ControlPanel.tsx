@@ -1,0 +1,190 @@
+"use client";
+
+import type { Country } from "@/countries/countryTypes";
+import { generateSeed } from "@/engine/random";
+import type { CameraMode } from "@/engine/simulation";
+import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
+import { DEFAULT_PHYSICS } from "@/engine/defaults";
+import { getMode, listModes } from "@/modes";
+import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
+import { FORMATS, type VideoFormat } from "@/render/formats";
+import { THEMES, type ThemeId } from "@/render/theme";
+import { PresetChips, type SelectionState } from "./CountrySelector";
+import { Button, Field, Section, Segmented, Select, Slider, Toggle } from "./ui";
+
+export const CAMERA_OPTIONS: { value: CameraMode; label: string }[] = [
+  { value: "fixed", label: "Fixed" },
+  { value: "follow-leader", label: "Follow leader" },
+  { value: "follow-action", label: "Follow action" },
+  { value: "follow-group", label: "Follow main group" },
+];
+
+export function seedPrefix(mode: ModeId): string {
+  return { "last-country-standing": "lcs", race: "race", "elimination-drop": "drop", "marble-race": "marble" }[mode];
+}
+
+export function ControlPanel({
+  config,
+  onConfig,
+  display,
+  onDisplay,
+  countries,
+  selection,
+  onSelection,
+  onOpenSelector,
+}: {
+  config: SimulationConfig;
+  onConfig: (config: SimulationConfig) => void;
+  display: DisplayOptions;
+  onDisplay: (display: DisplayOptions) => void;
+  countries: Country[];
+  selection: SelectionState;
+  onSelection: (selection: SelectionState) => void;
+  onOpenSelector: () => void;
+}) {
+  const mode = getMode(config.mode);
+  const scenario = mode.scenarios.find((s) => s.id === config.scenario) ?? mode.scenarios[0];
+  const physics = (patch: Partial<PhysicsSettings>) => onConfig({ ...config, physics: { ...config.physics, ...patch } });
+  const show = (patch: Partial<DisplayOptions>) => onDisplay({ ...display, ...patch });
+  const participants = Math.min(selection.selected.length, config.maxParticipants);
+
+  return (
+    <div>
+      <Section title="Mode">
+        <Select
+          label="Mode"
+          value={config.mode}
+          options={listModes().map((m) => ({ value: m.id, label: m.label }))}
+          onChange={(id) => {
+            const next = getMode(id);
+            onConfig({
+              ...config,
+              mode: id,
+              scenario: next.scenarios[0]?.id ?? "default",
+              maxParticipants: next.defaultParticipants,
+              seed: generateSeed(seedPrefix(id)),
+            });
+            onDisplay({ ...display, camera: next.defaultCamera });
+          }}
+        />
+        <p className="text-xs leading-relaxed text-zinc-500">{mode.description}</p>
+        <Select
+          label="Scenario"
+          value={scenario?.id ?? ""}
+          options={mode.scenarios.map((s) => ({ value: s.id, label: s.label }))}
+          onChange={(id) => onConfig({ ...config, scenario: id })}
+        />
+        {scenario && <p className="text-xs text-zinc-500">{scenario.description}</p>}
+      </Section>
+
+      <Section
+        title="Countries"
+        aside={
+          <button type="button" onClick={onOpenSelector} className="text-xs font-medium text-amber-300 hover:text-amber-200">
+            Edit selection →
+          </button>
+        }
+      >
+        <p className="text-sm text-zinc-200">
+          <span className="font-semibold">{selection.label}</span>{" "}
+          <span className="text-zinc-500">
+            · {selection.selected.length} selected
+            {selection.selected.length > config.maxParticipants && `, ${participants} race (seeded sample)`}
+          </span>
+        </p>
+        <PresetChips countries={countries} state={selection} onChange={onSelection} />
+        <Slider
+          label="Max participants"
+          value={config.maxParticipants}
+          min={2}
+          max={250}
+          step={1}
+          onChange={(maxParticipants) => onConfig({ ...config, maxParticipants })}
+        />
+      </Section>
+
+      <Section title="Seed">
+        <div className="flex gap-2">
+          <input
+            className="input font-mono"
+            value={config.seed}
+            spellCheck={false}
+            onChange={(e) => onConfig({ ...config, seed: e.target.value })}
+            aria-label="Seed"
+          />
+          <Button onClick={() => onConfig({ ...config, seed: generateSeed(seedPrefix(config.mode)) })} title="Random seed">
+            ⟳
+          </Button>
+        </div>
+        <p className="text-xs text-zinc-500">
+          Same settings + same seed = the exact same simulation, on any machine.
+        </p>
+      </Section>
+
+      <Section
+        title="Physics"
+        aside={
+          <button type="button" onClick={() => onConfig({ ...config, physics: DEFAULT_PHYSICS })} className="text-xs text-zinc-500 hover:text-zinc-300">
+            Reset
+          </button>
+        }
+      >
+        <Slider label="Gravity" value={config.physics.gravity} min={0} max={3} step={0.05} onChange={(gravity) => physics({ gravity })} format={(v) => `${v.toFixed(2)}×`} />
+        <Slider label="Bounciness (restitution)" value={config.physics.restitution} min={0} max={1} step={0.01} onChange={(restitution) => physics({ restitution })} format={(v) => v.toFixed(2)} />
+        <Slider label="Friction" value={config.physics.friction} min={0} max={0.5} step={0.005} onChange={(friction) => physics({ friction })} format={(v) => v.toFixed(3)} />
+        <Slider label="Air drag" value={config.physics.frictionAir} min={0} max={0.05} step={0.001} onChange={(frictionAir) => physics({ frictionAir })} format={(v) => v.toFixed(3)} />
+        <Slider label="Ball size" value={config.physics.ballScale} min={0.5} max={1.6} step={0.05} onChange={(ballScale) => physics({ ballScale })} format={(v) => `${Math.round(v * 100)}%`} />
+        <Slider label="Max speed" value={config.physics.maxSpeed} min={8} max={40} step={1} onChange={(maxSpeed) => physics({ maxSpeed })} />
+        <Slider label="Chaos (random kicks)" value={config.physics.chaos} min={0} max={1} step={0.05} onChange={(chaos) => physics({ chaos })} format={(v) => `${Math.round(v * 100)}%`} />
+        <Slider label="Max duration" value={config.maxDuration} min={10} max={300} step={5} onChange={(maxDuration) => onConfig({ ...config, maxDuration })} format={(v) => `${v}s`} />
+      </Section>
+
+      <Section title="Video">
+        <Segmented
+          label="Format"
+          value={display.format}
+          options={(Object.keys(FORMATS) as VideoFormat[]).map((f) => ({ value: f, label: f }))}
+          onChange={(format) => show({ format })}
+        />
+        <p className="-mt-1 text-xs text-zinc-500">
+          {FORMATS[display.format].label} · {FORMATS[display.format].width}×{FORMATS[display.format].height}
+        </p>
+        <Select label="Camera" value={display.camera} options={CAMERA_OPTIONS} onChange={(camera) => show({ camera })} />
+        <Toggle label="Dynamic zoom" checked={display.dynamicZoom} onChange={(dynamicZoom) => show({ dynamicZoom })} />
+        <Slider label="Playback speed" value={display.speed} min={0.25} max={4} step={0.25} onChange={(speed) => show({ speed })} format={(v) => `${v}×`} />
+        <Segmented
+          label="Theme"
+          value={display.theme}
+          options={(Object.keys(THEMES) as ThemeId[]).map((t) => ({ value: t, label: THEMES[t].label }))}
+          onChange={(theme) => show({ theme })}
+        />
+        <Segmented<LabelMode>
+          label="Ball labels"
+          value={display.labels}
+          options={[
+            { value: "none", label: "None" },
+            { value: "code", label: "Code" },
+            { value: "name", label: "Name" },
+          ]}
+          onChange={(labels) => show({ labels })}
+        />
+        <Toggle label="Countryball eyes" checked={display.eyes} onChange={(eyes) => show({ eyes })} />
+        <Toggle label="Show safe areas" checked={display.safeArea} onChange={(safeArea) => show({ safeArea })} />
+      </Section>
+
+      <Section title="HUD">
+        <Toggle label="Show HUD" checked={display.hud} onChange={(hud) => show({ hud })} />
+        <Toggle label="Live ranking" checked={display.ranking} onChange={(ranking) => show({ ranking })} />
+        <Toggle label="Event feed" checked={display.feed} onChange={(feed) => show({ feed })} />
+        <Field label="Headline">
+          <input
+            className="input"
+            placeholder="Mode default (e.g. WHICH COUNTRY WILL WIN?)"
+            value={display.headline}
+            onChange={(e) => show({ headline: e.target.value })}
+          />
+        </Field>
+      </Section>
+    </div>
+  );
+}
