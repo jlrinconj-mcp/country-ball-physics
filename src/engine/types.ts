@@ -51,7 +51,9 @@ export type MotionSpec =
   | { type: "rotate"; speed: number; pivot: Vec2; phase?: number }
   | { type: "oscillate"; axis: Vec2; amplitude: number; period: number; phase?: number }
   /** One-shot move by `offset`, starting at `start` seconds (gates, trapdoors). */
-  | { type: "slide"; offset: Vec2; start: number; duration: number };
+  | { type: "slide"; offset: Vec2; start: number; duration: number }
+  /** Pose driven by mode rules through `Obstacle.manualOffset` (reusable gates). */
+  | { type: "manual" };
 
 export interface ObstacleSpec {
   id: string;
@@ -71,7 +73,8 @@ export type ZoneShape =
 
 export interface ZoneSpec {
   id: string;
-  kind: "eliminate" | "finish";
+  /** eliminate: out · finish: race goal · safe: survives the current round. */
+  kind: "eliminate" | "finish" | "safe";
   shape: ZoneShape;
   /** Draw the zone. Invisible zones still work. */
   visible?: boolean;

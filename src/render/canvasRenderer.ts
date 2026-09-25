@@ -115,9 +115,13 @@ export class CanvasRenderer {
     const { shape, visible, kind } = zone.spec;
     if (!visible || shape.kind !== "rect") return;
     const ctx = this.ctx;
-    if (kind === "eliminate") {
-      ctx.fillStyle = theme.eliminateZone;
+    if (kind === "eliminate" || kind === "safe") {
+      const edge = kind === "safe" ? theme.safeEdge : theme.eliminateEdge;
+      ctx.fillStyle = kind === "safe" ? theme.safeZone : theme.eliminateZone;
       ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+      ctx.fillStyle = edge;
+      ctx.fillRect(shape.x, shape.y + shape.h - 12, shape.w, 12);
+      drawMark(ctx, kind === "safe", shape.x + shape.w / 2, shape.y + shape.h - 44, Math.min(22, shape.w * 0.16), edge);
       return;
     }
     // Finish: checkered band.
@@ -278,6 +282,28 @@ export class CanvasRenderer {
     ctx.strokeRect(safe.x, safe.y, safe.w, safe.h);
     ctx.restore();
   }
+}
+
+/** Vector ✓ / ✕ (font-independent). */
+function drawMark(ctx: CanvasRenderingContext2D, check: boolean, x: number, y: number, size: number, color: string): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = size * 0.38;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  if (check) {
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x - size * 0.25, y + size * 0.75);
+    ctx.lineTo(x + size, y - size * 0.7);
+  } else {
+    ctx.moveTo(x - size * 0.75, y - size * 0.75);
+    ctx.lineTo(x + size * 0.75, y + size * 0.75);
+    ctx.moveTo(x + size * 0.75, y - size * 0.75);
+    ctx.lineTo(x - size * 0.75, y + size * 0.75);
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** "#rrggbb" + alpha → rgba(). */

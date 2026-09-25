@@ -80,6 +80,7 @@ export interface SimulationEvents {
   simulationFinished: { result: SimulationResult };
   impact: { x: number; y: number; intensity: number; kind: "ball" | "wall" | "bumper" };
   obstacleChanged: { id: string; tick: number };
+  roundStarted: { round: number; remaining: number; tick: number };
 }
 
 export type DecidedBy = "physics" | "timeout";
@@ -352,6 +353,17 @@ export class Simulation {
       x: ball.body.velocity.x + dvx,
       y: ball.body.velocity.y + dvy,
     });
+  }
+
+  /** Move a live ball instantly (new round, respawn), zeroing its motion. */
+  teleport(ball: CountryBall, x: number, y: number, vx = 0, vy = 0): void {
+    const body = ball.body;
+    if (!body) return;
+    this.physics.placeStatic(body, { x, y }, body.angle);
+    PhysicsWorld.setVelocity(body, { x: vx, y: vy });
+    PhysicsWorld.setAngularVelocity(body, 0);
+    ball.syncFromBody();
+    ball.savePrevious();
   }
 
   sortedByPlace(): CountryBall[] {

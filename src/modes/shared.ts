@@ -74,10 +74,10 @@ export function rankSurvival(balls: CountryBall[], aliveOrder: (a: CountryBall, 
  * Eliminate the given candidates (farthest-first ordering is up to the
  * caller) but never the last ball alive; declare it the winner instead.
  */
-export function eliminateKeepingOne(sim: Simulation, candidates: CountryBall[]): void {
+export function eliminateKeepingOne(sim: Simulation, candidates: CountryBall[], options: { fall?: boolean } = {}): void {
   for (const ball of candidates) {
     if (sim.aliveCount <= 1) break;
-    sim.eliminate(ball);
+    sim.eliminate(ball, options);
   }
   if (sim.aliveCount === 1) sim.declareWinner(sim.aliveBalls[0]);
 }

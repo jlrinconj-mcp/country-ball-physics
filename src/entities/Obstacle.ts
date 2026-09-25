@@ -42,6 +42,8 @@ export class Obstacle {
   prevX: number;
   prevY: number;
   prevAngle: number;
+  /** Offset applied by rules for `manual` motion. */
+  manualOffset: Vec2 = { x: 0, y: 0 };
 
   constructor(
     public spec: ObstacleSpec,
@@ -86,6 +88,9 @@ export class Obstacle {
         y: motion.pivot.y + dx * s + dy * c,
         angle: this.baseAngle + theta,
       };
+    }
+    if (motion.type === "manual") {
+      return { x: this.origin.x + this.manualOffset.x, y: this.origin.y + this.manualOffset.y, angle: this.baseAngle };
     }
     if (motion.type === "slide") {
       const t = Math.min(1, Math.max(0, (time - motion.start) / motion.duration));

@@ -41,6 +41,8 @@ export function createRaceMode(options: {
   description: string;
   headline: string;
   scenarios: RaceScenario[];
+  /** Ball radius cap; marbles are a little smaller. */
+  maxRadius?: number;
 }): ModeDefinition {
   const scenarioById = (id: string) => options.scenarios.find((s) => s.id === id) ?? (options.scenarios[0] as RaceScenario);
 
@@ -55,7 +57,7 @@ export function createRaceMode(options: {
     defaultDuration: 120,
 
     autoBallRadius(count) {
-      return autoRadius(1000 * 420, count, 0.3, 11, 28);
+      return autoRadius(1000 * 420, count, 0.3, 11, options.maxRadius ?? 28);
     },
 
     createLayout({ scenario, random, count, ballRadius }) {

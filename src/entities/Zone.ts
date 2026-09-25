@@ -6,7 +6,12 @@ import type { ZoneSpec } from "@/engine/types";
  * once per tick, which keeps them deterministic and cheap.
  */
 export class Zone {
-  constructor(readonly spec: ZoneSpec) {}
+  /** Mutable: modes may flip a zone between safe and eliminate each round. */
+  constructor(public spec: ZoneSpec) {}
+
+  get id(): string {
+    return this.spec.id;
+  }
 
   get kind(): ZoneSpec["kind"] {
     return this.spec.kind;

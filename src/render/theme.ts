@@ -14,6 +14,9 @@ export interface RenderTheme {
   panel: string;
   ballBorder: string;
   eliminateZone: string;
+  eliminateEdge: string;
+  safeZone: string;
+  safeEdge: string;
   accent: string;
   obstacles: Record<ObstacleStyle, string>;
 }
@@ -30,7 +33,10 @@ export const THEMES: Record<ThemeId, RenderTheme> = {
     textShadow: "rgba(0,0,0,0.55)",
     panel: "rgba(8,11,20,0.72)",
     ballBorder: "#070a12",
-    eliminateZone: "rgba(255,84,84,0.10)",
+    eliminateZone: "rgba(255,84,84,0.2)",
+    eliminateEdge: "#ff5a5a",
+    safeZone: "rgba(64,214,132,0.24)",
+    safeEdge: "#40d684",
     accent: "#ffd23f",
     obstacles: {
       wall: "#dfe6f3",
@@ -57,7 +63,10 @@ export const THEMES: Record<ThemeId, RenderTheme> = {
     textShadow: "rgba(255,255,255,0.6)",
     panel: "rgba(255,255,255,0.8)",
     ballBorder: "#10131a",
-    eliminateZone: "rgba(220,50,50,0.08)",
+    eliminateZone: "rgba(220,50,50,0.12)",
+    eliminateEdge: "#d93b3b",
+    safeZone: "rgba(30,160,90,0.14)",
+    safeEdge: "#1ea05a",
     accent: "#e03e2f",
     obstacles: {
       wall: "#1d2433",

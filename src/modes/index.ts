@@ -2,12 +2,16 @@ import type { Country } from "@/countries/countryTypes";
 import { Simulation, type ModeDefinition } from "@/engine/simulation";
 import { DEFAULT_CONFIG, DEFAULT_PHYSICS } from "@/engine/defaults";
 import type { ModeId, SimulationConfig } from "@/engine/types";
+import { eliminationDrop } from "./eliminationDrop";
 import { lastCountryStanding } from "./lastCountryStanding";
+import { marbleRace } from "./marbleRace";
 import { race } from "./race";
 
 export const MODES: Partial<Record<ModeId, ModeDefinition>> = {
   "last-country-standing": lastCountryStanding,
   race,
+  "elimination-drop": eliminationDrop,
+  "marble-race": marbleRace,
 };
 
 export function getMode(id: ModeId): ModeDefinition {

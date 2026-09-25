@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSimulation, modeDefaults } from "@/modes";
+import { createSimulation, listModes, modeDefaults } from "@/modes";
 import { DEFAULT_CONFIG } from "./defaults";
 import type { SimulationEvents } from "./simulation";
 import { makeTestCountries } from "./testing";
@@ -135,5 +135,25 @@ describe("Simulation (Race)", () => {
     expect(deepest).toBeLessThan(sim.layout.startY! + 40);
     expect(deepest).toBeGreaterThanOrEqual(startY - 200);
     sim.destroy();
+  });
+});
+
+describe("every mode and scenario", () => {
+  const cases = listModes().flatMap((mode) => mode.scenarios.map((s) => [mode.id, s.id] as const));
+
+  it.each(cases)("%s / %s is deterministic and produces a full ranking", (mode, scenario) => {
+    const cfg: SimulationConfig = {
+      ...DEFAULT_CONFIG,
+      ...modeDefaults(mode),
+      scenario,
+      seed: `all-${mode}-${scenario}`,
+      countries: codes.slice(0, 12),
+      maxParticipants: 12,
+    };
+    const a = run(cfg);
+    const b = run(cfg);
+    expect(b.fingerprint).toBe(a.fingerprint);
+    expect(a.ranking.map((r) => r.place)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect(a.ranking[0]?.cca3).toBe(a.winner.cca3);
   });
 });
