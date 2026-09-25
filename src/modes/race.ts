@@ -56,7 +56,7 @@ export function createRaceMode(options: {
     label: options.label,
     description: options.description,
     scenarios: options.scenarios.map(({ id, label, description }) => ({ id, label, description })),
-    defaultCamera: "follow-leader",
+    defaultCamera: "follow-action",
     defaultParticipants: 32,
     recommendedPhysics: { maxSpeed: 14 },
     defaultDuration: 120,

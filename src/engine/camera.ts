@@ -111,7 +111,7 @@ export class Camera {
       subject = leader ? [leader] : balls;
     } else if (mode === "follow-action") {
       const ranked = sim.rules.rank().filter((b) => b.alive);
-      subject = ranked.slice(0, Math.max(3, Math.ceil(ranked.length * 0.2)));
+      subject = ranked.slice(0, Math.max(3, Math.ceil(ranked.length * (sim.rules.progress ? 0.1 : 0.2))));
     } else {
       subject = trimmed(balls, 0.1);
     }
@@ -128,7 +128,15 @@ export class Camera {
     // so the chasers behind it are in shot; packs get a little look-ahead.
     const lookAhead = !sim.rules.progress ? 0 : ((mode === "follow-leader" ? -0.12 : 0.08) * content.h) / zoom;
     const x = zoom > fitWidth * 1.01 ? box.x + box.w / 2 : cx;
-    return this.clamp({ x, y: box.y + box.h / 2 + lookAhead, zoom }, bounds);
+    let y = box.y + box.h / 2 + lookAhead;
+    // Racing pack shots always keep the leader in frame, a little below centre.
+    const lead = subject[0];
+    if (mode === "follow-action" && sim.rules.progress && lead) {
+      const halfH = content.h / 2 / zoom;
+      const leadY = lerp(lead.prevY, lead.y, alpha);
+      y = Math.min(leadY + halfH * 0.2, Math.max(leadY - halfH * 0.7, y));
+    }
+    return this.clamp({ x, y, zoom }, bounds);
   }
 
   /** Keep the world's edges inside the content area (no empty space inside it). */
