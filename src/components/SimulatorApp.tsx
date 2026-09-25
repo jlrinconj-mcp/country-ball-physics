@@ -15,6 +15,9 @@ import { LivePanel } from "./LivePanel";
 import { SimulatorViewport } from "./SimulatorViewport";
 import { Button } from "./ui";
 
+/** For values that never change after hydration (browser capabilities). */
+const subscribeNever = () => () => {};
+
 const INITIAL_SELECTION: SelectionState = {
   selected: [],
   excluded: [],
@@ -118,6 +121,7 @@ export function SimulatorApp() {
   }, [controller]);
 
   const running = snapshot.config;
+  const canRecord = useSyncExternalStore(subscribeNever, () => controller.canRecord, () => false);
   const countryIndex = useMemo(() => new Map((countries ?? []).map((c) => [c.cca3, c])), [countries]);
   const pendingChanges =
     !!running &&
@@ -190,6 +194,20 @@ export function SimulatorApp() {
           {snapshot.paused && (
             <Button variant="ghost" onClick={() => controller.stepOnce()} title="Step one tick (.)">
               Step
+            </Button>
+          )}
+          <span className="mx-1 h-5 w-px bg-white/10" />
+          {snapshot.recording ? (
+            <Button onClick={() => void controller.stopRecording()} title="Stop and download now">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" /> Stop recording
+            </Button>
+          ) : (
+            <Button
+              onClick={() => void controller.record()}
+              disabled={!running || !canRecord}
+              title={canRecord ? "Replay from the start and download a full-resolution video" : "Video recording isn't supported in this browser"}
+            >
+              <span className="h-2 w-2 rounded-full bg-red-500" /> Record video
             </Button>
           )}
           {pendingChanges && <span className="text-xs text-amber-300/80">Settings changed · Generate to apply</span>}

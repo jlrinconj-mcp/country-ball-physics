@@ -14,9 +14,12 @@ import { FORMATS } from "@/render/formats";
 import { HudTracker } from "@/render/hudTracker";
 import { setFontFamily } from "@/render/text";
 import { viewportFor } from "@/render/viewport";
+import { CanvasRecorder, downloadBlob } from "./recorder";
 
 /** Keep animating this long after the winner is declared, then idle. */
 const OUTRO_TICKS = 6 * TICK_RATE;
+/** Recording keeps going this long after the result (winner animation). */
+const RECORD_TAIL_TICKS = 3.5 * TICK_RATE;
 /** Pause between tournament heats (the winner card stays up meanwhile). */
 const BETWEEN_HEATS_TICKS = 4 * TICK_RATE;
 const PUBLISH_INTERVAL_MS = 200;
@@ -49,6 +52,7 @@ export interface ControllerSnapshot {
   /** Compared with the previous finished run of the exact same config. */
   replay: "identical" | "different" | null;
   tournament: TournamentSummary | null;
+  recording: boolean;
 }
 
 export const EMPTY_SNAPSHOT: ControllerSnapshot = {
@@ -66,6 +70,7 @@ export const EMPTY_SNAPSHOT: ControllerSnapshot = {
   error: null,
   replay: null,
   tournament: null,
+  recording: false,
 };
 
 /**
@@ -97,6 +102,7 @@ export class SimulationController {
   private readonly audio = new AudioEngine();
   private detachAudio: (() => void) | null = null;
   private lastBanner: string | undefined;
+  private recorder: CanvasRecorder | null = null;
   private replay: ControllerSnapshot["replay"] = null;
 
   constructor() {
@@ -142,8 +148,8 @@ export class SimulationController {
     const canvas = this.canvas;
     if (!canvas) return;
     const format = FORMATS[this.display.format];
-    // Never render above the target output resolution.
-    const scale = Math.min(devicePixelRatio, format.width / Math.max(1, cssWidth));
+    // Never render above the target output resolution; record at exactly it.
+    const scale = this.recorder ? format.width / Math.max(1, cssWidth) : Math.min(devicePixelRatio, format.width / Math.max(1, cssWidth));
     const width = Math.max(1, Math.round(cssWidth * scale));
     const height = Math.max(1, Math.round((width * format.height) / format.width));
     if (canvas.width !== width || canvas.height !== height) {
@@ -162,7 +168,7 @@ export class SimulationController {
       this.audio.disable();
       this.bindAudio();
     }
-    this.loop.speed = display.speed;
+    if (!this.recorder) this.loop.speed = display.speed;
     this.camera.options = { mode: display.camera, dynamicZoom: display.dynamicZoom };
     this.applyViewport();
     if (formatChanged && this.sim) this.camera.snap(this.sim);
@@ -207,6 +213,41 @@ export class SimulationController {
     const config = this.baseConfig ?? this.snapshot.config;
     if (!config) return Promise.resolve();
     return this.load(config, this.countries);
+  }
+
+  get canRecord(): boolean {
+    return CanvasRecorder.supported();
+  }
+
+  /**
+   * Replay the current simulation from tick 0 and record it at full output
+   * resolution and 1× speed. Stops and downloads after the winner screen.
+   */
+  async record(): Promise<void> {
+    const config = this.baseConfig;
+    if (!config || !this.canvas || this.recorder || !CanvasRecorder.supported()) return;
+    await this.load(config, this.countries);
+    const canvas = this.canvas;
+    if (!canvas) return;
+    this.recorder = new CanvasRecorder();
+    this.loop.speed = 1;
+    this.applyViewport();
+    this.recorder.start(canvas, 60, this.audio.stream() ?? undefined);
+    this.publish(true);
+  }
+
+  async stopRecording(): Promise<void> {
+    const recorder = this.recorder;
+    if (!recorder) return;
+    const blob = await recorder.stop();
+    this.recorder = null;
+    this.loop.speed = this.display.speed;
+    this.applyViewport();
+    this.publish(true);
+    if (blob.size > 0) {
+      const name = (this.baseConfig?.seed ?? "simulation").replace(/[^a-z0-9-_]+/gi, "_");
+      downloadBlob(blob, `country-balls-${name}.${recorder.extension}`);
+    }
   }
 
   setPaused(paused: boolean): void {
@@ -262,6 +303,7 @@ export class SimulationController {
         this.startSimulation(next.config);
         return true;
       }
+      if (this.recorder && !next && since > RECORD_TAIL_TICKS) void this.stopRecording();
       if (since > OUTRO_TICKS) return false;
     }
     sim.step();
@@ -359,6 +401,7 @@ export class SimulationController {
       error: null,
       replay: this.replay,
       tournament: this.tournament?.summary() ?? null,
+      recording: this.recorder !== null,
     });
   }
 

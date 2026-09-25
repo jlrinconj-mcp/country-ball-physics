@@ -47,6 +47,7 @@ export class AudioEngine {
   private readonly buffers = new Map<SoundKind, AudioBuffer[]>();
   private readonly lastPlayed = new Map<SoundKind, number>();
   private voices = 0;
+  private streamDestination: MediaStreamAudioDestinationNode | null = null;
   private windowStart = 0;
   private windowCount = 0;
   private volume = 0.6;
@@ -64,6 +65,14 @@ export class AudioEngine {
     }
     if (this.ctx.state === "suspended") await this.ctx.resume();
     this.enabled = true;
+  }
+
+  /** Audio as a MediaStream (for recording). Null until enabled. */
+  stream(): MediaStream | null {
+    if (!this.ctx || !this.master) return null;
+    this.streamDestination ??= this.ctx.createMediaStreamDestination();
+    this.master.connect(this.streamDestination);
+    return this.streamDestination.stream;
   }
 
   disable(): void {
