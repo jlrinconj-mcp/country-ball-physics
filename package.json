@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "probe": "tsx scripts/probe.ts",
-    "render:frames": "tsx scripts/render-frames.ts"
+    "render:frames": "tsx scripts/render-frames.ts",
+    "generate": "tsx scripts/generate.ts"
   },
   "dependencies": {
     "matter-js": "^0.20.0",

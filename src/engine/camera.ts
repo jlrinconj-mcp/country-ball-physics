@@ -124,8 +124,9 @@ export class Camera {
       const fit = Math.min(width / (box.w + pad), content.h / (box.h + pad));
       zoom = Math.min(fitWidth * MAX_ZOOM_FACTOR, Math.max(fitWidth, fit));
     }
-    // Race tracks run downward: look a little ahead of the subject.
-    const lookAhead = sim.rules.progress ? content.h * 0.12 / zoom : 0;
+    // Races run downward. Following the leader, keep it a little below centre
+    // so the chasers behind it are in shot; packs get a little look-ahead.
+    const lookAhead = !sim.rules.progress ? 0 : ((mode === "follow-leader" ? -0.12 : 0.08) * content.h) / zoom;
     const x = zoom > fitWidth * 1.01 ? box.x + box.w / 2 : cx;
     return this.clamp({ x, y: box.y + box.h / 2 + lookAhead, zoom }, bounds);
   }

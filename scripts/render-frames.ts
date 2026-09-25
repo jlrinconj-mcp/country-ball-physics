@@ -1,23 +1,18 @@
 /**
  * Render PNG snapshots of a simulation without a browser.
- *   npm run render:frames -- --seed=world-001 --scenario=ring --times=0,2,8,end
+ *   npm run render:frames -- --mode=race --seed=world-001 --times=0,2,8,end
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { Camera } from "../src/engine/camera";
 import { DEFAULT_CONFIG } from "../src/engine/defaults";
 import { TICK_RATE } from "../src/engine/physicsWorld";
+import type { CameraMode } from "../src/engine/simulation";
 import type { ModeId } from "../src/engine/types";
 import { createSimulation, modeDefaults } from "../src/modes";
-import { CanvasRenderer } from "../src/render/canvasRenderer";
 import { DEFAULT_DISPLAY, type DisplayOptions } from "../src/render/displayOptions";
-import { FlagAtlas } from "../src/render/flagAtlas";
-import { FORMATS, type VideoFormat } from "../src/render/formats";
-import { viewportFor } from "../src/render/viewport";
-import { HudTracker } from "../src/render/hudTracker";
-import type { CameraMode } from "../src/engine/simulation";
+import type { VideoFormat } from "../src/render/formats";
 import { createNodeCountryService } from "./lib/countries";
-import { createOutputCanvas, nodePlatform, setupNodeFonts } from "./lib/nodeCanvas";
+import { HeadlessRenderer } from "./lib/headlessRenderer";
 
 const { values } = parseArgs({
   options: {
@@ -35,46 +30,34 @@ const { values } = parseArgs({
   },
 });
 
-setupNodeFonts();
-const service = createNodeCountryService();
-const countries = await service.getAllCountries();
+const countries = await createNodeCountryService().getAllCountries();
 const mode = values.mode as ModeId;
-const sim = createSimulation(
-  {
-    ...DEFAULT_CONFIG,
-    ...modeDefaults(mode),
-    seed: values.seed,
-    countries: countries.map((c) => c.cca3),
-    maxParticipants: Number(values.count),
-    scenario: values.scenario || modeDefaults(mode).scenario,
-  },
-  countries,
-);
-const format = FORMATS[values.format as VideoFormat];
+const config = {
+  ...DEFAULT_CONFIG,
+  ...modeDefaults(mode),
+  seed: values.seed,
+  countries: countries.map((c) => c.cca3),
+  maxParticipants: Number(values.count),
+  scenario: values.scenario || modeDefaults(mode).scenario,
+};
+const sim = createSimulation(config, countries);
 const display: DisplayOptions = {
   ...DEFAULT_DISPLAY,
-  format: format.id,
+  format: values.format as VideoFormat,
   camera: (values.camera || sim.definition.defaultCamera) as CameraMode,
   eyes: values.eyes,
   safeArea: values["safe-area"],
 };
-const scale = Number(values.scale);
-const canvas = createOutputCanvas(Math.round(format.width * scale), Math.round(format.height * scale));
-const atlas = new FlagAtlas({ border: "#070a12", borderRatio: 0.045, shading: true }, 256, nodePlatform);
-const loaded = await atlas.preload(sim.balls.map((b) => b.country), 15000);
-const renderer = new CanvasRenderer(canvas as unknown as HTMLCanvasElement, atlas);
-const camera = new Camera();
-camera.options = { mode: display.camera, dynamicZoom: display.dynamicZoom };
-camera.setViewport(viewportFor(display));
-camera.snap(sim);
-const hud = new HudTracker(sim);
 
-const result = (() => {
-  const probe = createSimulation(sim.config, countries);
-  const r = probe.runToEnd();
-  probe.destroy();
-  return r;
-})();
+// Run once headless to know when it ends.
+const probe = createSimulation(config, countries);
+const result = probe.runToEnd();
+probe.destroy();
+
+const renderer = new HeadlessRenderer(display, Number(values.scale));
+const loaded = await renderer.preload(sim.balls.map((b) => b.country));
+renderer.attach(sim);
+
 const endTick = (result?.ticks ?? sim.maxTicks) + Math.round(1.5 * TICK_RATE);
 const targets = values.times
   .split(",")
@@ -82,15 +65,11 @@ const targets = values.times
   .sort((a, b) => a - b);
 
 await mkdir(values.out, { recursive: true });
-const slug = `${mode}-${sim.scenario}-${values.seed}-${format.id.replace(":", "x")}`;
+const slug = `${mode}-${sim.scenario}-${values.seed}-${display.format.replace(":", "x")}`;
 for (const target of targets) {
-  while (sim.tick < target) {
-    sim.step();
-    camera.update(sim, 1, 1 / TICK_RATE);
-  }
-  renderer.render({ sim, camera, alpha: 1, display, hud });
+  renderer.advanceTo(target);
   const file = `${values.out}/${slug}-t${String(target).padStart(5, "0")}.png`;
-  await writeFile(file, canvas.toBuffer("image/png"));
+  await writeFile(file, renderer.png());
   console.log(`${file}  alive=${sim.aliveCount} status=${sim.status}`);
 }
 console.log(`flags loaded=${loaded.loaded} failed=${loaded.failed} winner=${result?.winner.name} t=${result?.seconds.toFixed(1)}s`);
