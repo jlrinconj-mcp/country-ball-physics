@@ -1,0 +1,119 @@
+[
+ {
+  "name": {
+   "common": "Argentina",
+   "official": "Argentine Republic"
+  },
+  "cca2": "AR",
+  "cca3": "ARG",
+  "region": "Americas",
+  "subregion": "South America",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇦🇷"
+ },
+ {
+  "name": {
+   "common": "Antarctica",
+   "official": "Antarctica"
+  },
+  "cca2": "AQ",
+  "cca3": "ATA",
+  "region": "Antarctic",
+  "subregion": "",
+  "independent": false,
+  "unMember": false,
+  "flag": "🇦🇶"
+ },
+ {
+  "name": {
+   "common": "Brazil",
+   "official": "Federative Republic of Brazil"
+  },
+  "cca2": "BR",
+  "cca3": "BRA",
+  "region": "Americas",
+  "subregion": "South America",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇧🇷"
+ },
+ {
+  "name": {
+   "common": "Colombia",
+   "official": "Republic of Colombia"
+  },
+  "cca2": "CO",
+  "cca3": "COL",
+  "region": "Americas",
+  "subregion": "South America",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇨🇴"
+ },
+ {
+  "name": {
+   "common": "France",
+   "official": "French Republic"
+  },
+  "cca2": "FR",
+  "cca3": "FRA",
+  "region": "Europe",
+  "subregion": "Western Europe",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇫🇷"
+ },
+ {
+  "name": {
+   "common": "Greenland",
+   "official": "Greenland"
+  },
+  "cca2": "GL",
+  "cca3": "GRL",
+  "region": "Americas",
+  "subregion": "North America",
+  "independent": false,
+  "unMember": false,
+  "flag": "🇬🇱"
+ },
+ {
+  "name": {
+   "common": "Japan",
+   "official": "Japan"
+  },
+  "cca2": "JP",
+  "cca3": "JPN",
+  "region": "Asia",
+  "subregion": "Eastern Asia",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇯🇵"
+ },
+ {
+  "name": {
+   "common": "New Zealand",
+   "official": "New Zealand"
+  },
+  "cca2": "NZ",
+  "cca3": "NZL",
+  "region": "Oceania",
+  "subregion": "Australia and New Zealand",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇳🇿"
+ },
+ {
+  "name": {
+   "common": "United States",
+   "official": "United States of America"
+  },
+  "cca2": "US",
+  "cca3": "USA",
+  "region": "Americas",
+  "subregion": "North America",
+  "independent": true,
+  "unMember": true,
+  "flag": "🇺🇸"
+ }
+]
