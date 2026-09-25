@@ -1,3 +1,4 @@
+import { withDeterministicMath } from "@/engine/deterministicMath";
 import { createRandom } from "@/engine/random";
 import type { ObstacleSpec, ZoneSpec } from "@/engine/types";
 import { TRACK_MODULES } from "./modules";
@@ -25,6 +26,10 @@ export const DEFAULT_POOL: ModuleKind[] = [
  * and options always return the same track (the same JSON, byte for byte).
  */
 export function generateTrack(seed: string, options: TrackOptions): TrackDefinition {
+  return withDeterministicMath(() => buildTrack(seed, options));
+}
+
+function buildTrack(seed: string, options: TrackOptions): TrackDefinition {
   const random = createRandom(seed).fork("track");
   const width = options.width ?? TRACK_WIDTH;
   const left = WALL;

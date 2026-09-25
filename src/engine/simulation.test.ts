@@ -182,3 +182,26 @@ describe("custom tracks", () => {
     sim.destroy();
   });
 });
+
+describe("golden fingerprints (cross-engine determinism)", () => {
+  // Verified identical in Node 26 (V8 14.6) and Chrome 152. If a deliberate
+  // engine or mode change alters these, update them in the same commit and
+  // say so: old seeds will replay differently from then on.
+  const GOLDEN: Record<string, string> = {
+    "last-country-standing": "bcb37601:AVX:1877",
+    race: "bd2e7238:AWX:929",
+    "elimination-drop": "11439d17:ALX:1291",
+    "marble-race": "f66433c4:AEX:843",
+  };
+  const golden = makeTestCountries(24);
+
+  it.each(Object.entries(GOLDEN))("%s reproduces its golden result", (mode, expected) => {
+    const sim = createSimulation(
+      { ...DEFAULT_CONFIG, ...modeDefaults(mode as SimulationConfig["mode"]), seed: "golden-2026", countries: golden.map((c) => c.cca3), maxParticipants: 24 },
+      golden,
+    );
+    const r = sim.runToEnd();
+    sim.destroy();
+    expect(`${r?.fingerprint}:${r?.winner.cca3}:${r?.ticks}`).toBe(expected);
+  });
+});

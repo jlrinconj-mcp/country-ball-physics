@@ -199,6 +199,8 @@ Every random decision goes through `createRandom(seed)` (cyrb128 hash → sfc32 
 
 Countries are sorted by ISO code before seeding, so the order you picked them in doesn't matter. Matter.js's global body-id counter is reset for each world. Tests run every mode and scenario twice and assert identical fingerprints.
 
+**Same result on every machine.** JavaScript engines don't agree on the last bits of `Math.sin`, `Math.cos` or `Math.atan2` (Node 26 and Chrome 152 already differ), and physics amplifies a 1e-16 difference into a different winner within seconds. So the simulation temporarily swaps in deterministic ports of fdlibm, built only from IEEE-exact operations, while it builds its world and steps (Matter.js included). Golden-fingerprint tests pin the exact results, which have been verified identical in Node and in the browser.
+
 ## Roadmap
 
 - [x] **Phase 1 (MVP):** GitHub repo, Next.js + TS, country API + cache, flags, CountryBall, Matter.js, 9:16 viewport, eliminations, counter, automatic winner, seeds

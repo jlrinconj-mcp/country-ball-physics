@@ -1,6 +1,7 @@
 import type { Country } from "@/countries/countryTypes";
 import { Simulation, type ModeDefinition } from "@/engine/simulation";
 import { DEFAULT_CONFIG, DEFAULT_PHYSICS } from "@/engine/defaults";
+import { withDeterministicMath } from "@/engine/deterministicMath";
 import type { ModeId, SimulationConfig } from "@/engine/types";
 import { eliminationDrop } from "./eliminationDrop";
 import { lastCountryStanding } from "./lastCountryStanding";
@@ -24,8 +25,9 @@ export function listModes(): ModeDefinition[] {
   return Object.values(MODES).filter((m): m is ModeDefinition => !!m);
 }
 
+/** Build a simulation. World construction uses cross-engine deterministic math. */
 export function createSimulation(config: SimulationConfig, countries: Country[]): Simulation {
-  return new Simulation(config, countries, getMode(config.mode));
+  return withDeterministicMath(() => new Simulation(config, countries, getMode(config.mode)));
 }
 
 /** Starting config for a mode: its recommended physics, limits and camera. */

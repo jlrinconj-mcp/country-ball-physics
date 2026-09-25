@@ -3,6 +3,7 @@ import type { Country } from "@/countries/countryTypes";
 import { CountryBall } from "@/entities/CountryBall";
 import { Obstacle } from "@/entities/Obstacle";
 import { Zone } from "@/entities/Zone";
+import { withDeterministicMath } from "./deterministicMath";
 import { EventBus } from "./events";
 import { PhysicsWorld, SUBSTEPS, TICK_DT, TICK_RATE } from "./physicsWorld";
 import { createRandom, hashString, type Random } from "./random";
@@ -65,6 +66,8 @@ export interface ModeRules {
   rank(): CountryBall[];
   /** Larger is further ahead. Enables leader tracking and follow cameras. */
   progress?(ball: CountryBall): number;
+  /** Whether a leader makes sense yet (e.g. not before the start gate opens). */
+  leaderActive?(): boolean;
   hud(): ModeHud;
   /** maxDuration reached: the mode must declare a winner. */
   onTimeout(): void;
@@ -222,6 +225,10 @@ export class Simulation {
 
   /** Advance exactly one fixed tick. Keeps animating after the result. */
   step(): void {
+    withDeterministicMath(() => this.advance());
+  }
+
+  private advance(): void {
     if (this.status === "ready") this.start();
 
     for (const ball of this.balls) ball.savePrevious();
@@ -265,10 +272,12 @@ export class Simulation {
 
   /** Run without rendering until finished (or a hard cap). */
   runToEnd(extraTicks = 0): SimulationResult | null {
-    const cap = this.maxTicks + TICK_RATE * 5;
-    while (this.status !== "finished" && this.tick < cap) this.step();
-    for (let i = 0; i < extraTicks; i++) this.step();
-    return this.result;
+    return withDeterministicMath(() => {
+      const cap = this.maxTicks + TICK_RATE * 5;
+      while (this.status !== "finished" && this.tick < cap) this.advance();
+      for (let i = 0; i < extraTicks; i++) this.advance();
+      return this.result;
+    });
   }
 
   // ── Rules API (used by modes) ──────────────────────────────────────────
@@ -487,7 +496,7 @@ export class Simulation {
 
   private trackLeader(): void {
     const progress = this.rules.progress;
-    if (!progress || this.tick < LEADER_WARMUP_TICKS) return;
+    if (!progress || this.tick < LEADER_WARMUP_TICKS || this.rules.leaderActive?.() === false) return;
     const top = this.rules.rank()[0];
     if (!top || top === this.leader) {
       this.leaderCandidate = null;
