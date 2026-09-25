@@ -47,9 +47,8 @@ function baseRings(scenario: string, ballRadius: number): RingPlan[] {
   }
 }
 
-function spawnRadius(scenario: string): number {
-  return scenario === "double-ring" ? 280 : scenario === "triple-ring" ? 212 : 440;
-}
+/** Balls spawn anywhere inside the outer ring (440), clear of inner rings. */
+const SPAWN_RADIUS = 440;
 
 export const lastCountryStanding: ModeDefinition = {
   id: "last-country-standing",
@@ -57,23 +56,22 @@ export const lastCountryStanding: ModeDefinition = {
   description: "Everyone starts inside spinning rings. Escape the outer ring and you're out. Last country inside wins.",
   scenarios: [
     { id: "ring", label: "Spinning Ring", description: "One ring with a gap that slowly widens." },
-    { id: "double-ring", label: "Double Ring", description: "Two counter-rotating rings." },
-    { id: "triple-ring", label: "Triple Ring", description: "Three nested rings, three gaps to escape." },
+    { id: "double-ring", label: "Double Ring", description: "Two counter-rotating rings; countries start in both layers." },
+    { id: "triple-ring", label: "Triple Ring", description: "Three nested rings; the inner ones must escape up to three gaps." },
   ],
   defaultCamera: "fixed",
   defaultParticipants: 48,
 
   autoBallRadius(count, scenario) {
-    const r = spawnRadius(scenario);
-    const fill = scenario === "ring" ? 0.3 : 0.36;
-    return autoRadius(Math.PI * r * r, count, fill, 9, 52);
+    const fill = scenario === "ring" ? 0.3 : 0.24;
+    return autoRadius(Math.PI * SPAWN_RADIUS * SPAWN_RADIUS, count, fill, 9, 52);
   },
 
   createLayout({ scenario, ballRadius, random }): WorldLayout {
     const rings = ringsFor(scenario, ballRadius, random.fork("rings"));
     const outer = rings[rings.length - 1] as RingPlan;
     const outerEdge = outer.radius + outer.thickness;
-    const spawn = spawnRadius(scenario) - ballRadius * 0.5;
+    const spawn = SPAWN_RADIUS - ballRadius * 0.5;
     return {
       bounds: { x: 0, y: 0, w: WIDTH, h: HEIGHT },
       focus: {
@@ -86,7 +84,14 @@ export const lastCountryStanding: ModeDefinition = {
       zones: [
         { id: "outside", kind: "eliminate", shape: { kind: "outside-circle", x: CENTER.x, y: CENTER.y, r: outerEdge + 2 }, visible: false },
       ],
-      spawn: { kind: "circle", x: CENTER.x, y: CENTER.y, r: spawn, speed: 7 },
+      spawn: {
+        kind: "circle",
+        x: CENTER.x,
+        y: CENTER.y,
+        r: spawn,
+        speed: 7,
+        avoidBands: rings.slice(0, -1).map((ring) => ({ radius: ring.radius, thickness: ring.thickness })),
+      },
     };
   },
 
@@ -101,10 +106,10 @@ export const lastCountryStanding: ModeDefinition = {
     const eliminator = sim.zones.find((z) => z.kind === "eliminate");
     const distance = (b: CountryBall) => Math.hypot(b.x - CENTER.x, b.y - CENTER.y);
 
-    // Pressure ramps from 0 → 1 between 20% and 85% of the time limit.
+    // Pressure ramps from 0 → 1 between 35% and 90% of the time limit.
     const pressure = () => {
       const t = sim.time / sim.config.maxDuration;
-      return Math.min(1, Math.max(0, (t - 0.2) / 0.65));
+      return Math.min(1, Math.max(0, (t - 0.35) / 0.55));
     };
 
     return {

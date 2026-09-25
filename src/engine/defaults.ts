@@ -2,7 +2,7 @@ import type { PhysicsSettings, SimulationConfig } from "./types";
 
 export const DEFAULT_PHYSICS: PhysicsSettings = {
   gravity: 1,
-  restitution: 0.95,
+  restitution: 1,
   friction: 0.01,
   frictionAir: 0,
   maxSpeed: 24,

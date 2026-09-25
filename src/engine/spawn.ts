@@ -37,7 +37,12 @@ function hexGrid(spec: SpawnSpec, spacing: number, radius: number): Vec2[] {
   for (let y = box.y + radius; y <= box.y + box.h - radius; y += rowHeight, row++) {
     const offset = row % 2 ? spacing / 2 : 0;
     for (let x = box.x + radius + offset; x <= box.x + box.w - radius; x += spacing) {
-      if (spec.kind === "circle" && Math.hypot(x - spec.x, y - spec.y) > spec.r - radius) continue;
+      if (spec.kind === "circle") {
+        const d = Math.hypot(x - spec.x, y - spec.y);
+        if (d > spec.r - radius) continue;
+        const gap = radius + 4;
+        if (spec.avoidBands?.some((b) => d > b.radius - gap && d < b.radius + b.thickness + gap)) continue;
+      }
       points.push({ x, y });
     }
   }

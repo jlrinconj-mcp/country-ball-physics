@@ -76,7 +76,15 @@ export interface ZoneSpec {
 }
 
 export type SpawnSpec =
-  | { kind: "circle"; x: number; y: number; r: number; speed: number }
+  | {
+      kind: "circle";
+      x: number;
+      y: number;
+      r: number;
+      speed: number;
+      /** Concentric bands (e.g. inner rings) spawn points must stay clear of. */
+      avoidBands?: { radius: number; thickness: number }[];
+    }
   | { kind: "rect"; x: number; y: number; w: number; h: number; speed: number };
 
 /** Static description of a world. Pure data: serializable and seedable. */

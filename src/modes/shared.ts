@@ -52,10 +52,10 @@ export function createChaos(sim: Simulation, random: Random, options: { interval
     if (chaos <= 0 || sim.tick === 0 || sim.tick % intervalTicks !== 0) return;
     const alive = sim.aliveBalls;
     if (alive.length === 0) return;
-    const count = Math.max(1, Math.ceil(alive.length * 0.2 * chaos));
+    const count = Math.max(1, Math.ceil(alive.length * 0.25 * Math.min(1, chaos)));
     for (const ball of random.sample(alive, count)) {
       const angle = -Math.PI / 2 + random.float(-1.2, 1.2);
-      const magnitude = random.float(4, 10) * chaos;
+      const magnitude = random.float(6, 14) * Math.min(1.5, 0.4 + chaos);
       sim.nudge(ball, Math.cos(angle) * magnitude, Math.sin(angle) * magnitude * (1 + upward));
     }
   };

@@ -113,7 +113,8 @@ export type SimulationStatus = "ready" | "running" | "finished";
 
 const LEADER_HOLD_TICKS = 12;
 const LEADER_WARMUP_TICKS = 30;
-const GHOST_LIFETIME = 2.5;
+/** Seconds an eliminated ball keeps falling (visual only). */
+export const GHOST_LIFETIME = 2.5;
 
 /**
  * One deterministic run: physics world + entities + mode rules. It has no

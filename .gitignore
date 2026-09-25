@@ -42,3 +42,7 @@ next-env.d.ts
 
 # local env (keep the example)
 !.env.example
+
+# local caches and generated media
+/.cache/
+/output/
