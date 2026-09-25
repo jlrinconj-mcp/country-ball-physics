@@ -205,6 +205,14 @@ export function ControlPanel({
         <Toggle label="Show safe areas" checked={display.safeArea} onChange={(safeArea) => show({ safeArea })} />
       </Section>
 
+      <Section title="Sound">
+        <Toggle label="Sound effects" checked={display.audio} onChange={(audio) => show({ audio })} />
+        {display.audio && (
+          <Slider label="Volume" value={display.volume} min={0} max={1} step={0.05} onChange={(volume) => show({ volume })} format={(v) => `${Math.round(v * 100)}%`} />
+        )}
+        <p className="text-xs text-zinc-500">Impacts, eliminations, lead changes, finish and victory. Rate-limited so big crowds stay pleasant.</p>
+      </Section>
+
       <Section title="HUD">
         <Toggle label="Show HUD" checked={display.hud} onChange={(hud) => show({ hud })} />
         <Toggle label="Live ranking" checked={display.ranking} onChange={(ranking) => show({ ranking })} />

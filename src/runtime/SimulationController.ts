@@ -1,3 +1,4 @@
+import { AudioEngine } from "@/audio/audioEngine";
 import type { Country } from "@/countries/countryTypes";
 import { Camera } from "@/engine/camera";
 import { TICK_RATE } from "@/engine/physicsWorld";
@@ -93,6 +94,9 @@ export class SimulationController {
   private tournament: Tournament | null = null;
   private baseConfig: SimulationConfig | null = null;
   private overlay: HudOverlay | undefined;
+  private readonly audio = new AudioEngine();
+  private detachAudio: (() => void) | null = null;
+  private lastBanner: string | undefined;
   private replay: ControllerSnapshot["replay"] = null;
 
   constructor() {
@@ -129,6 +133,7 @@ export class SimulationController {
   dispose(): void {
     this.detach();
     this.disposeSimulation();
+    this.audio.dispose();
     this.listeners.clear();
   }
 
@@ -150,6 +155,13 @@ export class SimulationController {
   setDisplay(display: DisplayOptions): void {
     const formatChanged = display.format !== this.display.format || display.hud !== this.display.hud;
     this.display = display;
+    this.audio.setVolume(display.volume);
+    if (display.audio && !this.audio.enabled) {
+      void this.audio.enable().then(() => this.bindAudio());
+    } else if (!display.audio && this.audio.enabled) {
+      this.audio.disable();
+      this.bindAudio();
+    }
     this.loop.speed = display.speed;
     this.camera.options = { mode: display.camera, dynamicZoom: display.dynamicZoom };
     this.applyViewport();
@@ -226,6 +238,8 @@ export class SimulationController {
       ? { status: this.tournament.label(), winnerTitle: this.isFinalHeat() ? "CHAMPION" : "HEAT WINNER" }
       : undefined;
     this.bindEvents(sim);
+    this.bindAudio();
+    this.lastBanner = undefined;
     this.applyViewport();
     this.camera.snap(sim);
     this.loop.paused = false;
@@ -251,7 +265,24 @@ export class SimulationController {
       if (since > OUTRO_TICKS) return false;
     }
     sim.step();
+    if (this.audio.enabled && sim.status === "running") {
+      // Countdown beeps follow the HUD banner ("3", "2", "1", "GO!").
+      const banner = sim.rules.hud().banner;
+      if (banner !== this.lastBanner && banner && !banner.startsWith("ROUND")) {
+        this.audio.play(banner === "GO!" ? "go" : "countdown");
+      }
+      this.lastBanner = banner;
+    }
     return true;
+  }
+
+  private bindAudio(): void {
+    this.detachAudio?.();
+    this.detachAudio = null;
+    const sim = this.sim;
+    if (!sim || !this.audio.enabled) return;
+    const width = viewportFor(this.display).width;
+    this.detachAudio = this.audio.attach(sim, (x) => ((this.camera.worldToScreen(x, 0).x / width) * 2 - 1) * 0.7);
   }
 
   private render(alpha: number, dt: number): void {
@@ -288,6 +319,8 @@ export class SimulationController {
   }
 
   private disposeSimulation(): void {
+    this.detachAudio?.();
+    this.detachAudio = null;
     for (const off of this.simListeners) off();
     this.simListeners.length = 0;
     this.hud?.dispose();
