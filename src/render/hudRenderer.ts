@@ -30,9 +30,10 @@ export function drawHud(
   const shadow = theme.textShadow;
 
   let y = safe.y + 8 * unit;
-  if (info.status) {
+  const status = [frame.overlay?.status, info.status].filter(Boolean).join(" · ");
+  if (status) {
     y += 34 * unit;
-    drawText(ctx, info.status, width / 2, y, {
+    drawText(ctx, status, width / 2, y, {
       size: 30 * unit,
       color: theme.textMuted,
       letterSpacing: 4 * unit,
@@ -77,7 +78,7 @@ export function drawHud(
 
 
   if (sim.status === "finished" && sim.winner && sim.finishedTick !== null) {
-    drawWinner(ctx, sim.winner, now - sim.finishedTick * TICK_DT, format, unit, theme, atlas, sim.decidedBy);
+    drawWinner(ctx, sim.winner, now - sim.finishedTick * TICK_DT, format, unit, theme, atlas, sim.decidedBy, frame.overlay?.winnerTitle ?? "WINNER");
   }
 }
 
@@ -224,6 +225,7 @@ function drawWinner(
   theme: RenderTheme,
   atlas: FlagAtlas,
   decidedBy: string,
+  title: string,
 ): void {
   const { width, height } = format;
   const safe = safeRect(format);
@@ -243,7 +245,7 @@ function drawWinner(
     ctx.restore();
   }
   const full = Math.min(safe.w, safe.h) * 0.24;
-  drawText(ctx, "WINNER", width / 2, cy - full - 44 * unit, {
+  drawText(ctx, title, width / 2, cy - full - 44 * unit, {
     size: 54 * unit,
     weight: 900,
     color: theme.accent,

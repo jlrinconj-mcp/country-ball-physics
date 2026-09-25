@@ -19,6 +19,15 @@ export interface Frame {
   alpha: number;
   display: DisplayOptions;
   hud: HudTracker;
+  /** Context from outside the simulation (e.g. tournament round). */
+  overlay?: HudOverlay;
+}
+
+export interface HudOverlay {
+  /** Extra status line, e.g. "QUARTER-FINALS · HEAT 2/4". */
+  status?: string;
+  /** Label above the winner, e.g. "CHAMPION". Defaults to "WINNER". */
+  winnerTitle?: string;
 }
 
 /**

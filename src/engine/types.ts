@@ -143,4 +143,9 @@ export interface SimulationConfig {
   physics: PhysicsSettings;
   /** Simulated seconds before the mode forces a decision. */
   maxDuration: number;
+  /**
+   * Run as a tournament: heats of `mode` with a seeded draw, winners advancing
+   * to a final. Orchestrated by `Tournament`; a single Simulation ignores it.
+   */
+  tournament?: { size: 8 | 16 | 32 | 64 };
 }

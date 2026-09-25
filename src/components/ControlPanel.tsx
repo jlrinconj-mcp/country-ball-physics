@@ -5,6 +5,7 @@ import { generateSeed } from "@/engine/random";
 import type { CameraMode } from "@/engine/simulation";
 import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
 import { getMode, listModes, modeDefaults } from "@/modes";
+import { TOURNAMENT_SIZES, type TournamentSize } from "@/modes/tournament";
 import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
@@ -46,22 +47,52 @@ export function ControlPanel({
   const physics = (patch: Partial<PhysicsSettings>) => onConfig({ ...config, physics: { ...config.physics, ...patch } });
   const show = (patch: Partial<DisplayOptions>) => onDisplay({ ...display, ...patch });
   const participants = Math.min(selection.selected.length, config.maxParticipants);
+  const tournament = config.tournament;
 
   return (
     <div>
       <Section title="Mode">
         <Select
           label="Mode"
-          value={config.mode}
-          options={listModes().map((m) => ({ value: m.id, label: m.label }))}
+          value={tournament ? "tournament" : config.mode}
+          options={[
+            ...listModes().map((m) => ({ value: m.id as ModeId | "tournament", label: m.label })),
+            { value: "tournament", label: "Tournament" },
+          ]}
           onChange={(id) => {
-            onConfig({ ...config, ...modeDefaults(id), seed: generateSeed(seedPrefix(id)) });
+            if (id === "tournament") {
+              onConfig({ ...config, tournament: { size: 16 }, seed: generateSeed("cup") });
+              return;
+            }
+            onConfig({ ...config, ...modeDefaults(id), tournament: undefined, seed: generateSeed(seedPrefix(id)) });
             onDisplay({ ...display, camera: getMode(id).defaultCamera });
           }}
         />
-        <p className="text-xs leading-relaxed text-zinc-500">{mode.description}</p>
+        {tournament && (
+          <>
+            <p className="text-xs leading-relaxed text-zinc-500">
+              A seeded draw splits {tournament.size} countries into heats; the best of each heat advance to the final.
+            </p>
+            <Segmented
+              label="Tournament size"
+              value={String(tournament.size) as "8" | "16" | "32" | "64"}
+              options={TOURNAMENT_SIZES.map((n) => ({ value: String(n) as "8" | "16" | "32" | "64", label: String(n) }))}
+              onChange={(size) => onConfig({ ...config, tournament: { size: Number(size) as TournamentSize } })}
+            />
+            <Select
+              label="Heats are played as"
+              value={config.mode}
+              options={listModes().map((m) => ({ value: m.id, label: m.label }))}
+              onChange={(id) => {
+                onConfig({ ...config, ...modeDefaults(id), tournament });
+                onDisplay({ ...display, camera: getMode(id).defaultCamera });
+              }}
+            />
+          </>
+        )}
+        {!tournament && <p className="text-xs leading-relaxed text-zinc-500">{mode.description}</p>}
         <Select
-          label="Scenario"
+          label={tournament ? "Heat scenario" : "Scenario"}
           value={scenario?.id ?? ""}
           options={mode.scenarios.map((s) => ({ value: s.id, label: s.label }))}
           onChange={(id) => onConfig({ ...config, scenario: id })}
@@ -81,18 +112,28 @@ export function ControlPanel({
           <span className="font-semibold">{selection.label}</span>{" "}
           <span className="text-zinc-500">
             · {selection.selected.length} selected
-            {selection.selected.length > config.maxParticipants && `, ${participants} race (seeded sample)`}
+            {tournament
+              ? `, ${Math.min(tournament.size, selection.selected.length)} drawn`
+              : selection.selected.length > config.maxParticipants && `, ${participants} take part (seeded sample)`}
           </span>
         </p>
         <PresetChips countries={countries} state={selection} onChange={onSelection} />
-        <Slider
-          label="Max participants"
-          value={config.maxParticipants}
-          min={2}
-          max={250}
-          step={1}
-          onChange={(maxParticipants) => onConfig({ ...config, maxParticipants })}
-        />
+        {tournament ? (
+          selection.selected.length < tournament.size && (
+            <p className="text-xs text-amber-300/80">
+              Select at least {tournament.size} countries for a {tournament.size}-country tournament.
+            </p>
+          )
+        ) : (
+          <Slider
+            label="Max participants"
+            value={config.maxParticipants}
+            min={2}
+            max={250}
+            step={1}
+            onChange={(maxParticipants) => onConfig({ ...config, maxParticipants })}
+          />
+        )}
       </Section>
 
       <Section title="Seed">
@@ -104,7 +145,7 @@ export function ControlPanel({
             onChange={(e) => onConfig({ ...config, seed: e.target.value })}
             aria-label="Seed"
           />
-          <Button onClick={() => onConfig({ ...config, seed: generateSeed(seedPrefix(config.mode)) })} title="Random seed">
+          <Button onClick={() => onConfig({ ...config, seed: generateSeed(tournament ? "cup" : seedPrefix(config.mode)) })} title="Random seed">
             ⟳
           </Button>
         </div>

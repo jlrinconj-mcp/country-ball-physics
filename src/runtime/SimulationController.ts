@@ -1,11 +1,12 @@
 import type { Country } from "@/countries/countryTypes";
 import { Camera } from "@/engine/camera";
 import { TICK_RATE } from "@/engine/physicsWorld";
-import type { Simulation, SimulationResult } from "@/engine/simulation";
+import { selectParticipants, type Simulation, type SimulationResult } from "@/engine/simulation";
 import { SimulationLoop } from "@/engine/simulationLoop";
 import type { SimulationConfig } from "@/engine/types";
 import { createSimulation } from "@/modes";
-import { CanvasRenderer } from "@/render/canvasRenderer";
+import { Tournament, type TournamentSummary } from "@/modes/tournament";
+import { CanvasRenderer, type HudOverlay } from "@/render/canvasRenderer";
 import { DEFAULT_DISPLAY, type DisplayOptions } from "@/render/displayOptions";
 import { FlagAtlas } from "@/render/flagAtlas";
 import { FORMATS } from "@/render/formats";
@@ -15,6 +16,8 @@ import { viewportFor } from "@/render/viewport";
 
 /** Keep animating this long after the winner is declared, then idle. */
 const OUTRO_TICKS = 6 * TICK_RATE;
+/** Pause between tournament heats (the winner card stays up meanwhile). */
+const BETWEEN_HEATS_TICKS = 4 * TICK_RATE;
 const PUBLISH_INTERVAL_MS = 200;
 
 export type Phase = "idle" | "loading" | "running" | "finished" | "error";
@@ -44,6 +47,7 @@ export interface ControllerSnapshot {
   error: string | null;
   /** Compared with the previous finished run of the exact same config. */
   replay: "identical" | "different" | null;
+  tournament: TournamentSummary | null;
 }
 
 export const EMPTY_SNAPSHOT: ControllerSnapshot = {
@@ -60,6 +64,7 @@ export const EMPTY_SNAPSHOT: ControllerSnapshot = {
   scenario: null,
   error: null,
   replay: null,
+  tournament: null,
 };
 
 /**
@@ -85,6 +90,9 @@ export class SimulationController {
   private loadToken = 0;
   private readonly simListeners: (() => void)[] = [];
   private readonly fingerprints = new Map<string, string>();
+  private tournament: Tournament | null = null;
+  private baseConfig: SimulationConfig | null = null;
+  private overlay: HudOverlay | undefined;
   private replay: ControllerSnapshot["replay"] = null;
 
   constructor() {
@@ -148,37 +156,43 @@ export class SimulationController {
     if (formatChanged && this.sim) this.camera.snap(this.sim);
   }
 
-  /** Build and start a simulation. Flags are preloaded first (with a timeout). */
+  /**
+   * Build and start a simulation (or a whole tournament). Flags are preloaded
+   * first, with a timeout, so the video never starts on placeholders.
+   */
   async load(config: SimulationConfig, countries: Country[]): Promise<void> {
     const token = ++this.loadToken;
     this.countries = countries;
+    this.baseConfig = config;
     this.update({ ...EMPTY_SNAPSHOT, phase: "loading", config });
     try {
-      const sim = createSimulation(config, countries);
-      await this.atlas.preload(sim.balls.map((b) => b.country), 6000);
-      if (token !== this.loadToken) {
-        sim.destroy();
-        return;
+      let first: SimulationConfig;
+      let tournament: Tournament | null = null;
+      let entrants: Country[];
+      if (config.tournament) {
+        tournament = new Tournament(config, config.tournament);
+        const next = tournament.current();
+        if (!next) throw new Error("Tournament has no heats");
+        first = next.config;
+        const codes = new Set(tournament.rounds[0]?.heats.flatMap((h) => h.countries));
+        entrants = countries.filter((c) => codes.has(c.cca3));
+      } else {
+        first = config;
+        entrants = selectParticipants(config, countries);
       }
-      this.disposeSimulation();
-      this.sim = sim;
-      this.hud = new HudTracker(sim);
-      this.replay = null;
-      this.bindEvents(sim);
-      this.applyViewport();
-      this.camera.snap(sim);
-      this.loop.paused = false;
-      this.loop.reset();
-      this.publish(true);
+      await this.atlas.preload(entrants, 6000);
+      if (token !== this.loadToken) return;
+      this.tournament = tournament;
+      this.startSimulation(first);
     } catch (error) {
       console.error(error);
       this.update({ ...EMPTY_SNAPSHOT, phase: "error", config, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
-  /** Same config, same seed, from tick 0: an identical replay. */
+  /** Same config, same seed, from tick 0: an identical replay (whole tournament too). */
   restart(): Promise<void> {
-    const config = this.sim?.config ?? this.snapshot.config;
+    const config = this.baseConfig ?? this.snapshot.config;
     if (!config) return Promise.resolve();
     return this.load(config, this.countries);
   }
@@ -202,10 +216,40 @@ export class SimulationController {
 
   // ── Internals ───────────────────────────────────────────────────────────
 
+  private startSimulation(config: SimulationConfig): void {
+    const sim = createSimulation(config, this.countries);
+    this.disposeSimulation();
+    this.sim = sim;
+    this.hud = new HudTracker(sim);
+    this.replay = null;
+    this.overlay = this.tournament
+      ? { status: this.tournament.label(), winnerTitle: this.isFinalHeat() ? "CHAMPION" : "HEAT WINNER" }
+      : undefined;
+    this.bindEvents(sim);
+    this.applyViewport();
+    this.camera.snap(sim);
+    this.loop.paused = false;
+    this.loop.reset();
+    this.publish(true);
+  }
+
+  private isFinalHeat(): boolean {
+    return this.tournament?.current()?.round.advance === 0;
+  }
+
   private step(): boolean {
     const sim = this.sim;
     if (!sim) return false;
-    if (sim.finishedTick !== null && sim.tick - sim.finishedTick > OUTRO_TICKS) return false;
+    if (sim.finishedTick !== null) {
+      const since = sim.tick - sim.finishedTick;
+      const next = this.tournament?.current();
+      // Tournaments roll straight into the next heat after a short outro.
+      if (next && since > BETWEEN_HEATS_TICKS) {
+        this.startSimulation(next.config);
+        return true;
+      }
+      if (since > OUTRO_TICKS) return false;
+    }
     sim.step();
     return true;
   }
@@ -215,7 +259,7 @@ export class SimulationController {
     const renderer = this.renderer;
     if (!sim || !renderer || !this.hud) return;
     this.camera.update(sim, alpha, dt);
-    renderer.render({ sim, camera: this.camera, alpha, display: this.display, hud: this.hud });
+    renderer.render({ sim, camera: this.camera, alpha, display: this.display, hud: this.hud, overlay: this.overlay });
     if (this.dirty || performance.now() - this.lastPublish > 500) this.publish(false);
   }
 
@@ -233,6 +277,7 @@ export class SimulationController {
       sim.events.on("countryFinished", mark),
       sim.events.on("leaderChanged", mark),
       sim.events.on("simulationFinished", ({ result }) => {
+        this.tournament?.record(result);
         const key = JSON.stringify({ ...sim.config, countries: [...sim.config.countries].sort() });
         const previous = this.fingerprints.get(key);
         this.fingerprints.set(key, result.fingerprint);
@@ -276,10 +321,11 @@ export class SimulationController {
       winner: sim.winner ? row(sim.winner) : null,
       ranking: (sim.status === "finished" ? sim.sortedByPlace() : sim.rules.rank()).map(row),
       result: sim.result,
-      config: sim.config,
+      config: this.baseConfig ?? sim.config,
       scenario: sim.scenario,
       error: null,
       replay: this.replay,
+      tournament: this.tournament?.summary() ?? null,
     });
   }
 

@@ -166,7 +166,7 @@ export class Simulation {
       ? config.scenario
       : (definition.scenarios[0]?.id ?? "default");
 
-    const participants = this.pickParticipants(countries);
+    const participants = selectParticipants(config, countries);
     const count = participants.length;
     this.ballRadius = clamp(
       Math.round(definition.autoBallRadius(count, this.scenario) * config.physics.ballScale * 2) / 2,
@@ -378,21 +378,6 @@ export class Simulation {
 
   // ── Internals ──────────────────────────────────────────────────────────
 
-  private pickParticipants(countries: Country[]): Country[] {
-    const wanted = new Set(this.config.countries.map((c) => c.toUpperCase()));
-    const unique = new Map<string, Country>();
-    for (const c of countries) if (wanted.has(c.cca3)) unique.set(c.cca3, c);
-    let pool = [...unique.values()].sort((a, b) => a.cca3.localeCompare(b.cca3));
-    const max = Math.max(1, this.config.maxParticipants);
-    if (pool.length > max) {
-      pool = this.random
-        .fork("participants")
-        .sample(pool, max)
-        .sort((a, b) => a.cca3.localeCompare(b.cca3));
-    }
-    return this.random.fork("order").shuffle(pool);
-  }
-
   private spawnBalls(participants: Country[]): void {
     const { physics: settings } = this.config;
     const points = spawnPoints(
@@ -552,6 +537,26 @@ export class Simulation {
       timeline: [...this.timeline],
     };
   }
+}
+
+/**
+ * The countries that take part, in spawn order. Pure: sorts by ISO code, takes
+ * a seeded sample if over the limit, then a seeded shuffle.
+ */
+export function selectParticipants(config: SimulationConfig, countries: Country[]): Country[] {
+  const random = createRandom(config.seed);
+  const wanted = new Set(config.countries.map((c) => c.toUpperCase()));
+  const unique = new Map<string, Country>();
+  for (const c of countries) if (wanted.has(c.cca3)) unique.set(c.cca3, c);
+  let pool = [...unique.values()].sort((a, b) => a.cca3.localeCompare(b.cca3));
+  const max = Math.max(1, config.maxParticipants);
+  if (pool.length > max) {
+    pool = random
+      .fork("participants")
+      .sample(pool, max)
+      .sort((a, b) => a.cca3.localeCompare(b.cca3));
+  }
+  return random.fork("order").shuffle(pool);
 }
 
 function clamp(value: number, min: number, max: number): number {

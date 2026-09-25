@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { getBrowserCountryService } from "@/countries/browserCountryService";
 import type { CountryDataStatus } from "@/countries/countryService";
 import type { Country } from "@/countries/countryTypes";
@@ -75,7 +75,7 @@ export function SimulatorApp() {
   const generate = useCallback(() => run({ ...config, countries: selection.selected }), [config, run, selection.selected]);
 
   const newSeed = useCallback(() => {
-    const next = { ...config, seed: generateSeed(seedPrefix(config.mode)), countries: selection.selected };
+    const next = { ...config, seed: generateSeed(config.tournament ? "cup" : seedPrefix(config.mode)), countries: selection.selected };
     setConfig(next);
     run(next);
   }, [config, run, selection.selected]);
@@ -118,6 +118,7 @@ export function SimulatorApp() {
   }, [controller]);
 
   const running = snapshot.config;
+  const countryIndex = useMemo(() => new Map((countries ?? []).map((c) => [c.cca3, c])), [countries]);
   const pendingChanges =
     !!running &&
     (JSON.stringify({ ...config, countries: [] }) !== JSON.stringify({ ...running, countries: [] }) ||
@@ -166,7 +167,11 @@ export function SimulatorApp() {
           <SimulatorViewport controller={controller} format={display.format} />
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2 border-t border-white/[0.06] px-4 py-3">
-          <Button variant="primary" onClick={generate} disabled={!countries || selection.selected.length < 2}>
+          <Button
+            variant="primary"
+            onClick={generate}
+            disabled={!countries || selection.selected.length < (config.tournament?.size ?? 2)}
+          >
             Generate Simulation
           </Button>
           <Button onClick={restart} disabled={!running} title="Restart this run from the beginning (R)">
@@ -192,7 +197,7 @@ export function SimulatorApp() {
       </main>
 
       <aside className="order-3 border-white/[0.06] bg-zinc-950 lg:w-[300px] lg:shrink-0 lg:border-l">
-        <LivePanel snapshot={snapshot} />
+        <LivePanel snapshot={snapshot} countries={countryIndex} />
       </aside>
 
       {countries && (
