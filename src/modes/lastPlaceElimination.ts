@@ -1,16 +1,11 @@
 import type { CountryBall } from "@/entities/CountryBall";
-import type { Obstacle } from "@/entities/Obstacle";
 import { TICK_RATE } from "@/engine/physicsWorld";
-import type { Random } from "@/engine/random";
 import type { ModeDefinition, ModeHud, ModeRules, Simulation } from "@/engine/simulation";
 import { spawnPoints } from "@/engine/spawn";
-import type { SpawnSpec } from "@/engine/types";
-import { CoursePath } from "@/tracks/coursePath";
-import { buildMap, findMap, listMaps, MAPS, type MapDefinition } from "@/tracks/maps";
-import { lastCountryStanding, RING_CENTER, ringsFor } from "./lastCountryStanding";
-import { trackLayout } from "./race";
+import { findMap, listMaps, MAPS, type MapDefinition } from "@/tracks/maps";
+import { RING_CENTER } from "./arena";
+import { courseFor, mapBallRadius, mapLayout } from "./course";
 import { RoundManager } from "./rounds";
-import { autoRadius, createChaos, ringObstacle, startGate } from "./shared";
 
 /** Intro before round 1: the "32 COUNTRIES" title card. */
 const FIRST_INTRO = 3;
@@ -34,26 +29,20 @@ export const lastPlaceElimination: ModeDefinition = {
   description:
     "Rounds on one map. Cross the line and you're safe until the next round; the last country still on the course is eliminated. Everyone restarts from a new seeded grid position each round, until one country is left.",
   scenarios: listMaps().map(({ id, label, description }) => ({ id, label, description })),
-  defaultCamera: "follow-action",
+  // Shorts-style: the leader, then the last place, taking turns.
+  defaultCamera: "leader-last",
   defaultParticipants: 32,
   // Soft bounces (as in Elimination Drop) so peg maps flow instead of
   // bouncing balls back up: rounds stay short.
   recommendedPhysics: { gravity: 1.6, maxSpeed: 18, restitution: 0.45 },
   defaultDuration: 3600,
 
-  autoBallRadius(count, scenario) {
-    // Arenas are smaller than a track's width: a little less fill.
-    if (mapFor(scenario).arena) return autoRadius(Math.PI * 440 * 440, count, 0.2, 9, 28);
-    return autoRadius(1000 * 420, count, 0.3, 11, 24);
+  autoBallRadius(count, scenario, map) {
+    return mapBallRadius(mapFor(scenario, map), count);
   },
 
   createLayout(ctx) {
-    const map = mapFor(ctx.scenario);
-    if (map.arena) {
-      const layout = lastCountryStanding.createLayout({ ...ctx, scenario: map.arena });
-      return { ...layout, obstacles: layout.obstacles.map((o) => (o.motion?.type === "rotate" ? { ...o, motion: { ...o.motion, speed: o.motion.speed * ARENA_SPIN[map.arena as NonNullable<MapDefinition["arena"]>] } } : o)) };
-    }
-    return trackLayout(buildMap(map, ctx.random.seed, { ballRadius: ctx.ballRadius, count: ctx.count }));
+    return mapLayout(mapFor(ctx.scenario, ctx.map), ctx);
   },
 
   createRules(sim) {
@@ -61,108 +50,8 @@ export const lastPlaceElimination: ModeDefinition = {
   },
 };
 
-function mapFor(scenario: string): MapDefinition {
-  return findMap(scenario) ?? (MAPS[0] as MapDefinition);
-}
-
-/**
- * What a round is run on. A track: a gate, a route, a finish line. An arena:
- * spinning rings whose gaps open at the start and widen as the round goes on,
- * with the outside as the finish.
- */
-interface Course {
-  /** Larger is closer to safety. */
-  progress(ball: CountryBall): number;
-  /** Progress value of a ball that made it. */
-  readonly length: number;
-  safe(ball: CountryBall): boolean;
-  /** Left the world some other way: it goes back to the start. */
-  lost(ball: CountryBall): boolean;
-  /** Stuck for good: let it drop through the scenery (tracks only). */
-  readonly rescue: boolean;
-  spawn: SpawnSpec;
-  /** Starting velocity for a fresh placement (arenas start moving). */
-  launch(random: Random): { vx: number; vy: number };
-  close(): void;
-  open(): void;
-  /** Every tick, before physics: seconds since the start while racing, else null. */
-  update(racing: number | null): void;
-  /** Random kicks while racing (arenas). */
-  kick(): void;
-}
-
-function trackCourse(sim: Simulation): Course {
-  const { bounds } = sim.layout;
-  const cx = bounds.x + bounds.w / 2;
-  const path = new CoursePath(sim.layout.path ?? [{ x: cx, y: sim.layout.startY ?? 0 }, { x: cx, y: sim.layout.finishY ?? bounds.h }]);
-  const finishZones = sim.zones.filter((z) => z.kind === "finish");
-  const gate = startGate(sim);
-  return {
-    progress: (b) => path.progress(b.x, b.y),
-    length: path.length,
-    safe: (b) => finishZones.some((z) => z.contains(b.x, b.y, b.radius)),
-    lost: (b) => b.x < bounds.x - 100 || b.x > bounds.x + bounds.w + 100 || b.y > bounds.y + bounds.h + 300,
-    rescue: true,
-    spawn: sim.layout.spawn,
-    launch: () => ({ vx: 0, vy: 0 }),
-    close: () => gate.close(),
-    open: () => gate.open(),
-    update: () => gate.update(),
-    kick: () => {},
-  };
-}
-
-/**
- * Seconds for the gaps to open from their starting size to their widest:
- * more rings to get through, faster opening, so every arena keeps 8–15 s rounds.
- */
-const ARENA_WIDEN = [9, 6.5, 4];
-
-/**
- * Rings spin faster than in Last Country Standing: balls pile up against a
- * ring until its gap comes round, and a round has to fit in 8–15 s.
- */
-const ARENA_SPIN: Record<NonNullable<MapDefinition["arena"]>, number> = { ring: 1.2, "double-ring": 1.3, "triple-ring": 1.8 };
-
-function arenaCourse(sim: Simulation, arena: NonNullable<MapDefinition["arena"]>): Course {
-  const plans = ringsFor(arena, sim.ballRadius, sim.random.fork("layout").fork("rings")).map((p) => ({ ...p, speed: p.speed * ARENA_SPIN[arena] }));
-  const rings = plans.map((plan) => ({ plan, gap: plan.gap, obstacle: sim.obstacles.find((o) => o.id === plan.id) as Obstacle }));
-  const outer = plans[plans.length - 1];
-  const edge = outer ? outer.radius + outer.thickness : 480;
-  const chaos = createChaos(sim, sim.random.fork("forces"));
-  const distance = (b: CountryBall) => Math.hypot(b.x - RING_CENTER.x, b.y - RING_CENTER.y);
-  const setGap = (ring: (typeof rings)[number], gap: number) => {
-    if (Math.abs(gap - ring.gap) < 0.02) return;
-    ring.gap = gap;
-    sim.replaceObstacle(ring.obstacle, ringObstacle({ ...ring.plan, gap }));
-  };
-  return {
-    progress: distance,
-    length: edge,
-    safe: (b) => distance(b) > edge + b.radius,
-    lost: (b) => b.y > sim.layout.bounds.h + 200,
-    // Gaps keep widening, so everyone gets out: no shortcuts through a ring.
-    rescue: false,
-    spawn: sim.layout.spawn,
-    launch: (random) => {
-      const angle = random.float(0, Math.PI * 2);
-      const speed = random.float(2, 5);
-      return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed };
-    },
-    // Closed rings during the intro: nobody slips out before the start.
-    close: () => rings.forEach((ring) => setGap(ring, 0)),
-    open: () => rings.forEach((ring) => setGap(ring, ring.plan.gap)),
-    update(racing) {
-      // Every half second the gaps open a little wider until everyone is out.
-      if (racing === null || sim.tick % 30 !== 0) return;
-      const k = Math.min(1, racing / (ARENA_WIDEN[rings.length - 1] ?? 4));
-      // Nested rings open wider than in Last Country Standing: every ball has
-      // to get through all of them within a round.
-      const extra = ((rings.length - 1) * 25 * Math.PI) / 180;
-      for (const ring of rings) setGap(ring, ring.plan.gap + (ring.plan.maxGap + extra - ring.plan.gap) * k);
-    },
-    kick: () => chaos(0.8),
-  };
+function mapFor(scenario: string, mapId?: string): MapDefinition {
+  return findMap(mapId) ?? findMap(scenario) ?? (MAPS[0] as MapDefinition);
 }
 
 /** Round banner: "ROUND 4", then "FINAL 5", "FINAL 4", "FINAL 3", "FINAL ROUND". */
@@ -173,8 +62,8 @@ export function roundTitle(round: number, remaining: number): string {
 }
 
 export function createLastPlaceRules(sim: Simulation): ModeRules {
-  const map = mapFor(sim.scenario);
-  const course = map.arena ? arenaCourse(sim, map.arena) : trackCourse(sim);
+  const map = mapFor(sim.scenario, sim.config.map);
+  const course = courseFor(sim, map);
   const { spawn } = course;
   const seeded = sim.random.fork("rounds");
   const forces = sim.random.fork("forces");
@@ -282,7 +171,7 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
       const crossing: CountryBall[] = [];
       for (const ball of sim.balls) {
         if (!ball.active) continue;
-        if (course.safe(ball)) {
+        if (course.made(ball)) {
           crossing.push(ball);
           continue;
         }
@@ -334,6 +223,8 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
 
     // Arenas are watched whole: the escapes happen all around the rim.
     cameraFixed: () => !!map.arena,
+
+    cameraMoment: () => (rounds.phase === "intro" ? "setup" : rounds.racing && !loser ? "live" : "hold"),
 
     cameraSubjects() {
       if (rounds.phase === "intro") return sim.activeBalls;

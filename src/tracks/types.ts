@@ -102,4 +102,9 @@ export interface TrackOptions {
   /** Fixed middle sequence (overrides pool/length). */
   sequence?: ModuleKind[];
   difficulty?: number;
+  /**
+   * "open" ends the track after the last middle module (no final drop, no
+   * finish line): the mode adds its own ending, e.g. Elimination Drop's boxes.
+   */
+  ending?: "finish" | "open";
 }

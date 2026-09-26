@@ -207,3 +207,47 @@ describe("Last Place Elimination smoothness", () => {
     expect(lastVisible / frames).toBeGreaterThan(0.95);
   });
 });
+
+describe("leader ↔ last camera", () => {
+  const viewport = { width: 1080, height: 1920, content: { x: 60, y: 460, w: 850, h: 1020 } };
+
+  it.each([
+    ["last-place-elimination", "plinko"],
+    ["race", "classic"],
+  ] as const)("%s / %s: starts on the leader, alternates, and only jumps on a cut", (mode, scenario) => {
+    const sim = createSimulation(config(mode, scenario, "leader-last"), countries);
+    const camera = new Camera();
+    camera.options = { mode: "leader-last", dynamicZoom: true };
+    camera.setViewport(viewport);
+    camera.snap(sim);
+    const roles: string[] = [];
+    let maxJump = 0;
+    let live = 0;
+    let visible = 0;
+    let rounds = 0;
+    sim.events.on("roundStarted", () => rounds++);
+    while (sim.status !== "finished" && rounds <= 3 && sim.tick < 90 * TICK_RATE) {
+      const cut = sim.cameraCut;
+      sim.step();
+      // Measure at the middle of the shot, where the viewer is looking.
+      const centre = { x: camera.pose.x, y: camera.pose.y };
+      const before = camera.worldToScreen(centre.x, centre.y);
+      camera.update(sim, 1, 1 / TICK_RATE);
+      const after = camera.worldToScreen(centre.x, centre.y);
+      const spot = camera.spotlight;
+      if (spot && spot.role !== roles.at(-1)) roles.push(spot.role);
+      // Cuts (new round, leader ↔ last switch) are allowed to jump.
+      if (sim.cameraCut === cut && !camera.cutThisFrame) maxJump = Math.max(maxJump, Math.hypot(after.x - before.x, after.y - before.y));
+      if (spot) {
+        live++;
+        const p = camera.worldToScreen(spot.ball.x, spot.ball.y);
+        if (p.x >= 0 && p.x <= viewport.width && p.y >= 0 && p.y <= viewport.height) visible++;
+      }
+    }
+    sim.destroy();
+    expect(roles[0]).toBe("leader");
+    expect(roles.slice(0, 3)).toEqual(["leader", "last", "leader"]);
+    expect(maxJump).toBeLessThan(viewport.height * 0.08);
+    expect(visible / live).toBeGreaterThan(0.95);
+  });
+});

@@ -64,7 +64,12 @@ export function drawHud(
   // whoever the mode calls out, e.g. the country in last place).
   const slotY = y + 54 * unit;
   const showedFeed = display.feed && sim.status !== "finished" && drawFeed(ctx, frame, width / 2, slotY, unit, theme, atlas, now, textWidth);
-  if (!showedFeed && info.featured && sim.status === "running") {
+  const spot = frame.camera.spotlight;
+  if (!showedFeed && spot && sim.status === "running") {
+    // Leader ↔ last camera: name whoever is on screen.
+    const leader = spot.role === "leader";
+    drawLeader(ctx, spot.ball, width / 2, slotY, unit, theme, atlas, 0, leader ? "LEADER  " : "LAST PLACE  ", leader ? theme.accent : DANGER);
+  } else if (!showedFeed && info.featured && sim.status === "running") {
     const { label, ball, tone } = info.featured;
     drawLeader(ctx, ball, width / 2, slotY, unit, theme, atlas, 0, `${label}  `, tone === "danger" ? DANGER : theme.text);
   } else if (!showedFeed && info.showLeader && sim.leader && sim.status === "running") {

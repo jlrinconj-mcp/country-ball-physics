@@ -1,16 +1,19 @@
 import type { CountryBall } from "@/entities/CountryBall";
 import { TICK_DT, TICK_RATE } from "@/engine/physicsWorld";
 import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
-import type { WorldLayout } from "@/engine/types";
 import { createRandom } from "@/engine/random";
 import { generateTrack } from "@/tracks/generator";
 import { buildMap, findMap } from "@/tracks/maps";
-import { MIDDLE_MODULES, type ModuleKind, type TrackDefinition } from "@/tracks/types";
+import { MIDDLE_MODULES, type ModuleKind } from "@/tracks/types";
+import { arenaCourse, configMap, mapBallRadius, mapLayout, trackLayout } from "./course";
+import { autoRadius, startGate } from "./shared";
 
 function isMiddleModule(kind: string): kind is ModuleKind {
   return (MIDDLE_MODULES as readonly string[]).includes(kind);
 }
-import { autoRadius, startGate } from "./shared";
+
+/** Countdown before an arena race: the rings open on "GO!". */
+const ARENA_COUNTDOWN = 3;
 
 export interface RaceScenario {
   id: string;
@@ -26,20 +29,7 @@ const PODIUM = 3;
 /** After the first finisher, wait at most this long for the podium. */
 const PODIUM_WAIT = 6 * TICK_RATE;
 
-export function trackLayout(track: TrackDefinition): WorldLayout {
-  return {
-    bounds: { x: 0, y: -60, w: track.width, h: track.height + 60 },
-    focus: { x: 0, y: -60, w: track.width, h: track.height + 60 },
-    obstacles: track.obstacles,
-    zones: track.zones,
-    spawn: { kind: "rect", ...track.spawn, speed: 1.5 },
-    startY: track.startY,
-    finishY: track.finishY,
-    gateOpensAt: track.gateOpensAt,
-    modules: track.modules,
-    path: track.path,
-  };
-}
+export { trackLayout };
 
 /** Shared race rules: used by Race and Marble Race. */
 export function createRaceMode(options: {
@@ -64,16 +54,20 @@ export function createRaceMode(options: {
     recommendedPhysics: { gravity: 1.6, maxSpeed: 18 },
     defaultDuration: 120,
 
-    autoBallRadius(count) {
+    autoBallRadius(count, _scenario, mapId) {
+      const map = findMap(mapId);
+      if (map?.arena) return mapBallRadius(map, count);
       return autoRadius(1000 * 420, count, 0.3, 11, options.maxRadius ?? 32);
     },
 
-    createLayout({ scenario, random, count, ballRadius, track: custom, map: mapId }) {
+    createLayout(ctx) {
+      const { scenario, random, count, ballRadius, track: custom, map: mapId } = ctx;
       const s = scenarioById(scenario);
       const sequence = custom?.sequence.filter(isMiddleModule);
-      // Arenas (rings) are for Last Place Elimination; races need a track.
+      // A map from the registry (track or ring arena), unless the track editor
+      // has a custom sequence.
       const map = findMap(mapId);
-      if (map && !map.arena && !sequence?.length) return trackLayout(buildMap(map, random.seed, { ballRadius, count }));
+      if (map && (map.arena || !sequence?.length)) return mapLayout(map, ctx);
       const track = generateTrack(random.seed, {
         length: s.length,
         pool: s.pool,
@@ -93,9 +87,14 @@ export function createRaceMode(options: {
 
 export function createRaceRules(sim: Simulation, headline: string): ModeRules {
   const { bounds } = sim.layout;
-  const gateOpensAt = sim.layout.gateOpensAt ?? 0;
+  // On a ring arena the race is to escape: the rings open on "GO!" and the
+  // first out wins.
+  const map = configMap(sim);
+  const arena = map?.arena ? arenaCourse(sim, map.arena) : null;
+  const gateOpensAt = arena ? ARENA_COUNTDOWN : (sim.layout.gateOpensAt ?? 0);
   const finishZones = sim.zones.filter((z) => z.kind === "finish");
-  const eliminators = sim.zones.filter((z) => z.kind === "eliminate");
+  const eliminators = arena ? [] : sim.zones.filter((z) => z.kind === "eliminate");
+  if (arena) arena.close();
   const forces = sim.random.fork("forces");
   const best = new Map<number, number>();
   const stalled = new Map<number, number>();
@@ -104,18 +103,28 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
   const gate = startGate(sim);
 
   const progress = (b: CountryBall) =>
-    b.status === "finished" ? 1e7 - (b.place ?? 0) : b.status === "eliminated" ? -1e7 + (b.eliminatedTick ?? 0) : b.y;
+    b.status === "finished" ? 1e7 - (b.place ?? 0) : b.status === "eliminated" ? -1e7 + (b.eliminatedTick ?? 0) : arena ? arena.progress(b) : b.y;
+  let opened = false;
 
   const rules: ModeRules = {
     beforeStep() {
+      if (arena) {
+        if (!opened && sim.time + TICK_DT >= gateOpensAt) {
+          opened = true;
+          arena.open();
+        }
+        arena.update(opened ? sim.time - gateOpensAt : null);
+        return;
+      }
       if (sim.time + TICK_DT >= gateOpensAt) gate.open(gateOpensAt);
       gate.update();
     },
 
     afterStep() {
+      if (arena && opened) arena.kick();
       for (const ball of sim.balls) {
         if (!ball.alive) continue;
-        if (finishZones.some((z) => z.contains(ball.x, ball.y, ball.radius))) {
+        if (arena ? arena.made(ball) : finishZones.some((z) => z.contains(ball.x, ball.y, ball.radius))) {
           sim.finish(ball);
           firstFinishTick ??= sim.tick;
           continue;
@@ -126,7 +135,7 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
           continue;
         }
         // Anti-stall: a ball that hasn't advanced for a while gets a small kick.
-        if (sim.tick > gateTick) {
+        if (!arena && sim.tick > gateTick) {
           const previous = best.get(ball.id) ?? -Infinity;
           if (ball.y > previous + 4) {
             best.set(ball.id, ball.y);
@@ -157,6 +166,11 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
     progress,
 
     leaderActive: () => sim.time >= gateOpensAt + 0.5,
+
+    // A ring arena is watched whole: the escapes happen all around the rim.
+    cameraFixed: () => !!arena,
+
+    cameraMoment: () => (sim.time < gateOpensAt ? "setup" : "live"),
 
     hud() {
       const t = sim.time;

@@ -37,7 +37,7 @@ function buildTrack(seed: string, options: TrackOptions): TrackDefinition {
   const difficulty = options.difficulty ?? 0.5;
 
   const middle = options.sequence ?? pickSequence(random.fork("sequence"), options.length, options.pool ?? DEFAULT_POOL);
-  const kinds: ModuleKind[] = ["start", ...middle, "final-drop", "finish"];
+  const kinds: ModuleKind[] = ["start", ...middle, ...(options.ending === "open" ? [] : (["final-drop", "finish"] as const))];
 
   const obstacles: ObstacleSpec[] = [];
   const zones: ZoneSpec[] = [];

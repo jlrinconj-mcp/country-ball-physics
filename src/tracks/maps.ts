@@ -211,7 +211,7 @@ export function listTrackMaps(): readonly MapDefinition[] {
 }
 
 /** Build a map's track for a seed. Same seed + options → same track. */
-export function buildMap(map: MapDefinition, seed: string, options: { ballRadius: number; count: number }): TrackDefinition {
+export function buildMap(map: MapDefinition, seed: string, options: { ballRadius: number; count: number; ending?: "finish" | "open" }): TrackDefinition {
   if (map.arena) throw new Error(`"${map.id}" is an arena, not a track`);
   const picks = createRandom(seed).fork("map-slots");
   const sequence = map.slots ? map.slots.map((options) => picks.pick(options)) : map.sequence;
@@ -222,5 +222,6 @@ export function buildMap(map: MapDefinition, seed: string, options: { ballRadius
     difficulty: map.difficulty,
     ballRadius: options.ballRadius,
     count: options.count,
+    ending: options.ending,
   });
 }

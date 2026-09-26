@@ -1,55 +1,15 @@
 import type { CountryBall } from "@/entities/CountryBall";
 import type { Obstacle } from "@/entities/Obstacle";
-import type { Random } from "@/engine/random";
 import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
 import type { WorldLayout } from "@/engine/types";
-import { autoRadius, createChaos, eliminateKeepingOne, rankSurvival, ringObstacle, type RingOptions } from "./shared";
+import { arenaLayout, ARENA_HEIGHT as HEIGHT, RING_CENTER as CENTER, ringsFor, SPAWN_RADIUS } from "./arena";
 
-const WIDTH = 1080;
-const HEIGHT = 1920;
-export const RING_CENTER = { x: WIDTH / 2, y: 900 };
-const CENTER = RING_CENTER;
 const DEG = Math.PI / 180;
+import { findMap } from "@/tracks/maps";
+import { configMap, mapBallRadius, mapLayout, trackCourse } from "./course";
+import { autoRadius, createChaos, eliminateKeepingOne, rankSurvival, ringObstacle } from "./shared";
 
-export interface RingPlan extends RingOptions {
-  /** Gap grows to this over time (radians). */
-  maxGap: number;
-}
-
-/** Seeded variation: each seed spins the rings differently. */
-export function ringsFor(scenario: string, ballRadius: number, random: Random): RingPlan[] {
-  const direction = random.sign();
-  return baseRings(scenario, ballRadius).map((ring) => ({
-    ...ring,
-    gapAngle: ring.gapAngle + random.float(-0.6, 0.6),
-    speed: ring.speed * direction * random.float(0.85, 1.2),
-  }));
-}
-
-function baseRings(scenario: string, ballRadius: number): RingPlan[] {
-  // Gap must comfortably pass a ball, whatever its size.
-  const gapFor = (radius: number) => Math.max(10 * DEG, (ballRadius * 2.8) / radius);
-  switch (scenario) {
-    case "double-ring":
-      return [
-        { id: "ring-inner", center: CENTER, radius: 300, thickness: 16, gapAngle: -Math.PI / 2, gap: gapFor(300), maxGap: 140 * DEG, speed: 0.75 },
-        { id: "ring-outer", center: CENTER, radius: 470, thickness: 18, gapAngle: Math.PI / 2, gap: gapFor(470), maxGap: 120 * DEG, speed: -0.45 },
-      ];
-    case "triple-ring":
-      return [
-        { id: "ring-1", center: CENTER, radius: 230, thickness: 14, gapAngle: -Math.PI / 2, gap: gapFor(230), maxGap: 150 * DEG, speed: 0.9 },
-        { id: "ring-2", center: CENTER, radius: 350, thickness: 16, gapAngle: Math.PI / 6, gap: gapFor(350), maxGap: 140 * DEG, speed: -0.6 },
-        { id: "ring-3", center: CENTER, radius: 470, thickness: 18, gapAngle: (5 * Math.PI) / 6, gap: gapFor(470), maxGap: 120 * DEG, speed: 0.4 },
-      ];
-    default:
-      return [
-        { id: "ring", center: CENTER, radius: 460, thickness: 18, gapAngle: -Math.PI / 2, gap: gapFor(460), maxGap: 130 * DEG, speed: 0.55 },
-      ];
-  }
-}
-
-/** Balls spawn anywhere inside the outer ring (440), clear of inner rings. */
-const SPAWN_RADIUS = 440;
+export { RING_CENTER, ringsFor, type RingPlan } from "./arena";
 
 export const lastCountryStanding: ModeDefinition = {
   id: "last-country-standing",
@@ -64,41 +24,26 @@ export const lastCountryStanding: ModeDefinition = {
   defaultParticipants: 48,
   defaultDuration: 90,
 
-  autoBallRadius(count, scenario) {
-    const fill = scenario === "ring" ? 0.3 : 0.24;
+  autoBallRadius(count, scenario, mapId) {
+    const map = findMap(mapId);
+    if (map && !map.arena) return mapBallRadius(map, count);
+    const arena = map?.arena ?? scenario;
+    const fill = arena === "ring" ? 0.3 : 0.24;
     return autoRadius(Math.PI * SPAWN_RADIUS * SPAWN_RADIUS, count, fill, 9, 52);
   },
 
-  createLayout({ scenario, ballRadius, random }): WorldLayout {
-    const rings = ringsFor(scenario, ballRadius, random.fork("rings"));
-    const outer = rings[rings.length - 1] as RingPlan;
-    const outerEdge = outer.radius + outer.thickness;
-    const spawn = SPAWN_RADIUS - ballRadius * 0.5;
-    return {
-      bounds: { x: 0, y: 0, w: WIDTH, h: HEIGHT },
-      focus: {
-        x: CENTER.x - outerEdge - 40,
-        y: CENTER.y - outerEdge - 40,
-        w: (outerEdge + 40) * 2,
-        h: (outerEdge + 40) * 2,
-      },
-      obstacles: rings.map((ring) => ringObstacle(ring)),
-      zones: [
-        { id: "outside", kind: "eliminate", shape: { kind: "outside-circle", x: CENTER.x, y: CENTER.y, r: outerEdge + 2 }, visible: false },
-      ],
-      spawn: {
-        kind: "circle",
-        x: CENTER.x,
-        y: CENTER.y,
-        r: spawn,
-        speed: 7,
-        avoidBands: rings.slice(0, -1).map((ring) => ({ radius: ring.radius, thickness: ring.thickness })),
-      },
-    };
+  createLayout(ctx): WorldLayout {
+    // Any map: a ring arena plays as usual; on a track, see `lastOnTrackRules`.
+    const map = findMap(ctx.map);
+    if (map && !map.arena) return mapLayout(map, ctx);
+    return arenaLayout(map?.arena ?? ctx.scenario, ctx.ballRadius, ctx.random);
   },
 
   createRules(sim: Simulation): ModeRules {
-    const plans = ringsFor(sim.scenario, sim.ballRadius, sim.random.fork("layout").fork("rings"));
+    const map = configMap(sim);
+    if (map && !map.arena) return lastOnTrackRules(sim);
+    const arena = map?.arena ?? sim.scenario;
+    const plans = ringsFor(arena, sim.ballRadius, sim.random.fork("layout").fork("rings"));
     const rings = plans.map((plan) => ({
       plan,
       gap: plan.gap,
@@ -164,3 +109,82 @@ export const lastCountryStanding: ModeDefinition = {
     };
   },
 };
+
+/** Countdown before the gate opens on a track. */
+const TRACK_COUNTDOWN = 3;
+
+/**
+ * Last Country Standing on a track: reaching the bottom is escaping, and
+ * escaping knocks you out. The last country still on the track wins. Stuck
+ * balls get kicked and, as a last resort, drop through what holds them, so
+ * hiding in a corner doesn't win.
+ */
+function lastOnTrackRules(sim: Simulation): ModeRules {
+  const course = trackCourse(sim);
+  const forces = sim.random.fork("forces");
+  const best = new Map<number, number>();
+  const stuckSince = new Map<number, number>();
+  let opened = false;
+  course.close();
+
+  const progress = (b: CountryBall) => course.progress(b);
+  const rules: ModeRules = {
+    beforeStep() {
+      if (!opened && sim.time >= TRACK_COUNTDOWN) {
+        opened = true;
+        course.open();
+      }
+      course.update(null);
+    },
+
+    afterStep() {
+      if (!opened) return;
+      const out: CountryBall[] = [];
+      for (const ball of sim.balls) {
+        if (!ball.active) continue;
+        if (course.made(ball) || course.lost(ball)) {
+          out.push(ball);
+          continue;
+        }
+        const p = progress(ball);
+        if (p > (best.get(ball.id) ?? -Infinity) + 4) {
+          best.set(ball.id, p);
+          stuckSince.set(ball.id, sim.tick);
+          continue;
+        }
+        const still = sim.tick - (stuckSince.get(ball.id) ?? sim.tick);
+        if (still > 0 && still % (3 * 60) === 0) sim.nudge(ball, forces.float(-7, 7), forces.float(-9, -4));
+        if (still >= 7 * 60) {
+          stuckSince.set(ball.id, sim.tick);
+          sim.phase(ball, 0.5);
+        }
+      }
+      // Several out on the same tick: the one further down went out first.
+      out.sort((a, b) => progress(b) - progress(a) || a.id - b.id);
+      if (out.length) eliminateKeepingOne(sim, out, { fall: false });
+      else if (sim.aliveCount === 1) sim.declareWinner(sim.aliveBalls[0]);
+    },
+
+    // Survivors first, the one furthest from the bottom leading.
+    rank: () => rankSurvival(sim.balls, (a, b) => progress(a) - progress(b)),
+    progress: (b) => (b.alive ? -progress(b) : -1e7 + (b.eliminatedTick ?? 0)),
+    leaderActive: () => opened,
+    cameraMoment: () => (opened ? "live" : "setup"),
+
+    hud() {
+      const t = sim.time;
+      return {
+        headline: "LAST ONE ON THE TRACK WINS",
+        counterLabel: "COUNTRIES REMAINING",
+        counterValue: sim.aliveCount,
+        showLeader: false,
+        banner: t < TRACK_COUNTDOWN ? String(Math.ceil(TRACK_COUNTDOWN - t)) : t < TRACK_COUNTDOWN + 0.8 ? "GO!" : undefined,
+      };
+    },
+
+    onTimeout() {
+      sim.declareWinner(rules.rank()[0], "timeout");
+    },
+  };
+  return rules;
+}

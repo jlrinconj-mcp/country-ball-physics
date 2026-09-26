@@ -1,4 +1,5 @@
 import type { CountryBall } from "@/entities/CountryBall";
+import { TICK_RATE } from "./physicsWorld";
 import type { CameraMode, Simulation } from "./simulation";
 import type { Rect } from "./types";
 
@@ -33,6 +34,19 @@ const LEADER_FRAME = 0.85;
 const FRAME_MARGIN = 28;
 /** When the kept-in-shot ball changes, catch up at most this many frame heights per second. */
 const HANDOVER_SPEED = 4;
+/** Leader ↔ last: seconds on each subject, and how close the shot is. */
+const SHOT_SECONDS = 3.2;
+const CLOSE_UP = 1.7;
+/** A switch that moves the shot further than this (fraction of the frame height) is a cut. */
+const CUT_DISTANCE = 0.6;
+/** Stiffness of the quick pan when switching subjects over a short distance. */
+const WHIP_STIFFNESS = 7;
+
+/** Who the leader ↔ last camera is on. */
+export interface Spotlight {
+  role: "leader" | "last";
+  ball: CountryBall;
+}
 
 /**
  * Smooth camera. Targets come from the simulation state (leader, pack,
@@ -48,6 +62,12 @@ export class Camera {
   /** Ball kept in shot last frame, and whether we're still catching up to it. */
   private kept: CountryBall | null = null;
   private handover = false;
+  /** Leader ↔ last: who's on screen (read by the HUD), since when it's live. */
+  spotlight: Spotlight | null = null;
+  /** The last update cut to a new shot instead of moving (for tooling and tests). */
+  cutThisFrame = false;
+  private live: { sim: Simulation; tick: number } | null = null;
+  private whip = 0;
 
   setViewport(viewport: Viewport): void {
     this.viewport = viewport;
@@ -68,8 +88,27 @@ export class Camera {
       this.snap(sim, alpha);
       return;
     }
+    const previous = this.spotlight;
+    this.spotlight = this.pickSpotlight(sim);
     const target = this.target(sim, alpha);
-    const kp = 1 - Math.exp(-POSITION_STIFFNESS * dt);
+    this.cutThisFrame = false;
+    if (this.spotlight && previous && this.spotlight.ball !== previous.ball) {
+      // A new subject (leader ↔ last, or a new leader / last): cut if it's
+      // far, else a quick whip-pan.
+      const far = Math.hypot(target.x - this.pose.x, target.y - this.pose.y) * this.pose.zoom > this.viewport.height * CUT_DISTANCE;
+      this.kept = this.spotlight.ball;
+      // After a cut the subject is already in shot; on a pan, "keep in
+      // frame" catches up at a bounded speed instead of snapping.
+      this.handover = !far;
+      if (far) {
+        this.pose = target;
+        this.cutThisFrame = true;
+        return;
+      }
+      this.whip = 0.6;
+    }
+    this.whip = Math.max(0, this.whip - dt);
+    const kp = 1 - Math.exp(-(this.whip > 0 ? WHIP_STIFFNESS : POSITION_STIFFNESS) * dt);
     const kz = 1 - Math.exp(-ZOOM_STIFFNESS * dt);
     this.pose = {
       x: this.pose.x + (target.x - this.pose.x) * kp,
@@ -87,10 +126,20 @@ export class Camera {
    */
   private keepLeaderInFrame(sim: Simulation, alpha: number, dt: number): void {
     const mode = this.options.mode;
-    if (mode !== "follow-leader" && mode !== "follow-action") return;
+    if (mode !== "follow-leader" && mode !== "follow-action" && mode !== "leader-last") return;
     if (sim.rules.cameraFixed?.()) return;
+    // Leader ↔ last: nothing to keep before it goes live, and the whip-pan
+    // to a new subject is already on its way.
+    if (mode === "leader-last" && (!this.spotlight || this.whip > 0)) return;
     // Modes that pick their own subjects keep the first one in shot.
-    const leader = sim.rules.cameraSubjects ? (sim.rules.cameraSubjects()[0] ?? null) : sim.leader?.active ? sim.leader : null;
+    const leader =
+      mode === "leader-last"
+        ? (this.spotlight?.ball ?? null)
+        : sim.rules.cameraSubjects
+          ? (sim.rules.cameraSubjects()[0] ?? null)
+          : sim.leader?.active
+            ? sim.leader
+            : null;
     if (!leader?.active) return;
     const x = lerp(leader.prevX, leader.x, alpha);
     const y = lerp(leader.prevY, leader.y, alpha);
@@ -115,6 +164,27 @@ export class Camera {
     }
     // Never past the world's edges (a subject inside the world stays in shot).
     if (px !== this.pose.x || py !== this.pose.y) this.pose = this.clamp({ ...this.pose, x: px, y: py }, sim.layout.bounds);
+  }
+
+  /**
+   * Leader ↔ last: the leader first, then whoever is last, taking turns every
+   * few seconds while the race is live (restarting with the leader each time
+   * it goes live, e.g. every round). On simulation time, so recordings match.
+   */
+  private pickSpotlight(sim: Simulation): Spotlight | null {
+    if (this.options.mode !== "leader-last" || sim.status !== "running" || sim.rules.cameraFixed?.()) return null;
+    if ((sim.rules.cameraMoment?.() ?? "live") !== "live") {
+      this.live = null;
+      return null;
+    }
+    if (!this.live || this.live.sim !== sim) this.live = { sim, tick: sim.tick };
+    const order = sim.rules.rank().filter((b) => b.active);
+    const first = order[0];
+    const last = order[order.length - 1];
+    if (!first || !last) return null;
+    if (first === last) return { role: "leader", ball: first };
+    const shot = Math.floor((sim.tick - this.live.tick) / (SHOT_SECONDS * TICK_RATE));
+    return shot % 2 === 0 ? { role: "leader", ball: first } : { role: "last", ball: last };
   }
 
   /**
@@ -151,6 +221,25 @@ export class Camera {
 
     const centreOfFocus = { x: focus.x + focus.w / 2, y: focus.y + focus.h / 2, zoom: fitAll };
     const balls = sim.balls.filter((b) => b.active);
+    if (mode === "leader-last" && !sim.rules.cameraFixed?.()) {
+      const moment = sim.rules.cameraMoment?.() ?? "live";
+      // Hold the shot for a result (the winner card covers the end).
+      if ((moment === "hold" && sim.status === "running") || sim.status === "finished") return this.pose;
+      const spot = this.spotlight;
+      if (spot) {
+        // A close-up on one ball, a little look-ahead down the course.
+        const zoom = fitWidth * CLOSE_UP;
+        const x = lerp(spot.ball.prevX, spot.ball.x, alpha);
+        const y = lerp(spot.ball.prevY, spot.ball.y, alpha) + (sim.rules.progress ? (0.1 * content.h) / zoom : 0);
+        return this.clamp({ x, y, zoom }, bounds);
+      }
+      // Setup (start box) or no race yet: the whole field, as a group.
+      const group = boundsOf(balls.length ? balls : sim.balls, alpha);
+      const pad = sim.ballRadius * 6;
+      const fit = Math.min(width / (group.w + pad), content.h / (group.h + pad));
+      const zoom = Math.min(fitWidth * MAX_ZOOM_FACTOR, Math.max(fitWidth, fit));
+      return this.clamp({ x: group.x + group.w / 2, y: group.y + group.h / 2, zoom }, bounds);
+    }
     if (mode === "fixed" || sim.rules.cameraFixed?.()) {
       // Whole map. When it fits the frame at full width, show all of it;
       // a tall track would shrink to a sliver with empty space either side,

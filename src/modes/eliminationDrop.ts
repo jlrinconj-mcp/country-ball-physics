@@ -1,10 +1,13 @@
 import type { CountryBall } from "@/entities/CountryBall";
 import type { Zone } from "@/entities/Zone";
 import { TICK_RATE } from "@/engine/physicsWorld";
-import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
+import type { LayoutContext, ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
 import { spawnPoints } from "@/engine/spawn";
 import type { ObstacleSpec, Rect, WorldLayout, ZoneSpec } from "@/engine/types";
 import { pegGrid } from "@/tracks/grid";
+import { buildMap, findMap, type MapDefinition } from "@/tracks/maps";
+import { RING_CENTER } from "./arena";
+import { configMap, courseFor, mapBallRadius, mapLayout, trackLayout } from "./course";
 import { autoRadius, eliminateKeepingOne } from "./shared";
 
 const WIDTH = 1080;
@@ -24,6 +27,82 @@ function slotCount(ballRadius: number): number {
   const n = Math.floor((RIGHT - LEFT) / (ballRadius * 2 * 3.5));
   const clamped = Math.max(3, Math.min(7, n));
   return clamped % 2 ? clamped : clamped - 1;
+}
+
+/**
+ * Wide, deep boxes with a dead floor, from `top` down: deep enough that a box
+ * catching twice its share never overflows (balls piled above a box would
+ * never count as landed), walled well above the pile so nothing bounces from
+ * one box into another. Returns the floor's y.
+ */
+function addBoxes(obstacles: ObstacleSpec[], zones: ZoneSpec[], top: number, count: number, r: number): number {
+  const width = RIGHT - LEFT;
+  const slots = slotCount(r);
+  const slotW = width / slots;
+  const slotRow = Math.max(1, Math.floor((slotW - 14) / (2 * r)));
+  const stack = Math.ceil((2 * count) / slots / slotRow);
+  const floorY = top + Math.max(300, r * 11, stack * 2 * r * 0.9 + 5 * r);
+  for (let i = 1; i < slots; i++) {
+    const x = LEFT + i * slotW;
+    obstacles.push({
+      id: `divider-${i}`,
+      style: "wall",
+      shapes: [
+        { kind: "rect", x, y: (top + floorY) / 2, w: 14, h: floorY - top },
+        { kind: "circle", x, y: top, r: 9 },
+      ],
+      restitution: 0.05,
+      friction: 0.1,
+    });
+  }
+  for (let i = 0; i < slots; i++) {
+    zones.push({
+      id: `slot-${i}`,
+      kind: "eliminate",
+      shape: { kind: "rect", x: LEFT + i * slotW + 7, y: top + r * 0.6, w: slotW - 14, h: floorY - top - r * 0.6 },
+      visible: true,
+    });
+  }
+  // A dead floor: balls land in their box instead of bouncing back out.
+  obstacles.push({ id: "floor", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: floorY + 20, w: WIDTH, h: 40 }], restitution: 0, friction: 0.3 });
+  return floorY;
+}
+
+/** Side walls from `top` to the floor (the boxes' part of a map). */
+function sideWalls(top: number, floorY: number, id: string): ObstacleSpec[] {
+  const h = floorY + 40 - top;
+  return [
+    { id: `${id}-left`, style: "wall", shapes: [{ kind: "rect", x: LEFT - 20, y: top + h / 2, w: 40, h }] },
+    { id: `${id}-right`, style: "wall", shapes: [{ kind: "rect", x: RIGHT + 20, y: top + h / 2, w: 40, h }] },
+  ];
+}
+
+/**
+ * Any map from the registry above the boxes: a track (without its finish, it
+ * pours straight into the boxes) or a ring arena (escape the rings, fall into
+ * a box).
+ */
+function mapBoard(map: MapDefinition, ctx: LayoutContext): WorldLayout {
+  const r = ctx.ballRadius;
+  if (map.arena) {
+    const arena = mapLayout(map, ctx);
+    const obstacles = [...arena.obstacles];
+    const zones = arena.zones.filter((z) => z.kind !== "eliminate");
+    const top = RING_CENTER.y + 520 + 3 * r;
+    const floorY = addBoxes(obstacles, zones, top, ctx.count, r);
+    obstacles.unshift(...sideWalls(-40, floorY, "wall"), { id: "lid", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: -20, w: WIDTH, h: 40 }] });
+    const height = floorY + 40;
+    return { ...arena, obstacles, zones, bounds: { x: 0, y: -60, w: WIDTH, h: height + 60 }, focus: { x: 0, y: -60, w: WIDTH, h: height + 60 }, finishY: floorY };
+  }
+  const track = buildMap(map, ctx.random.seed, { ballRadius: r, count: ctx.count, ending: "open" });
+  const layout = trackLayout(track);
+  const obstacles = [...layout.obstacles];
+  const zones = [...layout.zones];
+  const top = track.height + 40;
+  const floorY = addBoxes(obstacles, zones, top, ctx.count, r);
+  obstacles.push(...sideWalls(track.height - 100, floorY, "box-wall"));
+  const height = floorY + 40;
+  return { ...layout, obstacles, zones, bounds: { x: 0, y: -60, w: WIDTH, h: height + 60 }, focus: { x: 0, y: -60, w: WIDTH, h: height + 60 }, finishY: floorY };
 }
 
 /** Plinko board: spawn box, gate, pegs and bumpers, then slots that decide. */
@@ -86,41 +165,12 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
   });
 
   const slots = slotCount(r);
-  const slotW = width / slots;
   const slotTop = boardTop + grid.span + grid.pegRadius + 2.6 * r + 40;
-  // Deep enough that a slot catching twice its share never overflows (balls
-  // piled above a slot would never count as landed), and walled well above
-  // the pile so nothing bounces from one box into another.
-  const slotRow = Math.max(1, Math.floor((slotW - 14) / (2 * r)));
-  const stack = Math.ceil((2 * count) / slots / slotRow);
-  const floorY = slotTop + Math.max(300, r * 11, stack * 2 * r * 0.9 + 5 * r);
-  for (let i = 1; i < slots; i++) {
-    const x = LEFT + i * slotW;
-    obstacles.push({
-      id: `divider-${i}`,
-      style: "wall",
-      shapes: [
-        { kind: "rect", x, y: (slotTop + floorY) / 2, w: 14, h: floorY - slotTop },
-        { kind: "circle", x, y: slotTop, r: 9 },
-      ],
-      restitution: 0.05,
-      friction: 0.1,
-    });
-  }
-  for (let i = 0; i < slots; i++) {
-    zones.push({
-      id: `slot-${i}`,
-      kind: "eliminate",
-      shape: { kind: "rect", x: LEFT + i * slotW + 7, y: slotTop + r * 0.6, w: slotW - 14, h: floorY - slotTop - r * 0.6 },
-      visible: true,
-    });
-  }
+  const floorY = addBoxes(obstacles, zones, slotTop, count, r);
   obstacles.unshift(
     { id: "wall-left", style: "wall", shapes: [{ kind: "rect", x: LEFT - 20, y: floorY / 2, w: 40, h: floorY + 200 }] },
     { id: "wall-right", style: "wall", shapes: [{ kind: "rect", x: RIGHT + 20, y: floorY / 2, w: 40, h: floorY + 200 }] },
     { id: "lid", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: -20, w: WIDTH, h: 40 }] },
-    // A dead floor: balls land in their box instead of bouncing back out.
-    { id: "floor", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: floorY + 20, w: WIDTH, h: 40 }], restitution: 0, friction: 0.3 },
   );
 
   const height = floorY + 40;
@@ -157,12 +207,16 @@ export const eliminationDrop: ModeDefinition = {
   // bouncing back up, which keeps a round at ~8–15 s.
   recommendedPhysics: { gravity: 1.6, maxSpeed: 20, restitution: 0.45 },
 
-  autoBallRadius(count) {
+  autoBallRadius(count, _scenario, mapId) {
+    const map = findMap(mapId);
+    if (map?.arena) return mapBallRadius(map, count);
     return autoRadius(1000 * 380, count, 0.3, 11, 26);
   },
 
-  createLayout({ scenario, random, count, ballRadius }) {
-    return buildBoard(scenario, count, ballRadius, random).layout;
+  createLayout(ctx) {
+    const map = findMap(ctx.map);
+    if (map) return mapBoard(map, ctx);
+    return buildBoard(ctx.scenario, ctx.count, ctx.ballRadius, ctx.random).layout;
   },
 
   createRules(sim) {
@@ -175,6 +229,10 @@ function createDropRules(sim: Simulation): ModeRules {
   const first = slots[0]?.spec.shape;
   const slotTop = first && first.kind === "rect" ? first.y : 0;
   const gates = sim.obstacles.filter((o) => o.id.startsWith("gate-"));
+  // On a map, its own gate (track) or rings (arena) hold the field back.
+  const map = configMap(sim);
+  const course = map ? courseFor(sim, map) : null;
+  let opened = false;
   const spawn = sim.layout.spawn;
   const rounds = sim.random.fork("rounds");
   const forces = sim.random.fork("forces");
@@ -207,12 +265,18 @@ function createDropRules(sim: Simulation): ModeRules {
     slots.forEach((zone, i) => {
       zone.spec = { ...zone.spec, kind: safeSlots.has(i) ? "safe" : "eliminate" };
     });
-    if (round > 1 && spawn.kind === "rect") {
+    if (round > 1 && (spawn.kind === "rect" || course)) {
       const points = spawnPoints(spawn, alive.length, sim.ballRadius, rounds.fork(`spawn-${round}`));
       alive.forEach((ball, i) => {
         const p = points[i];
-        if (p) sim.teleport(ball, p.x, p.y, rounds.float(-1, 1), 0);
+        if (!p) return;
+        const v = course?.arena ? course.launch(rounds) : { vx: rounds.float(-1, 1), vy: 0 };
+        sim.teleport(ball, p.x, p.y, v.vx, v.vy);
       });
+    }
+    if (course) {
+      course.close();
+      opened = false;
     }
     setGate(0);
     sim.events.emit("roundStarted", { round, remaining: alive.length, tick: sim.tick });
@@ -224,12 +288,21 @@ function createDropRules(sim: Simulation): ModeRules {
     beforeStep() {
       if (round === 0) startRound();
       const t = (sim.tick - roundStart) / TICK_RATE - GATE_DELAY;
+      if (course) {
+        if (!opened && t >= 0) {
+          opened = true;
+          course.open();
+        }
+        course.update(opened ? t : null);
+        return;
+      }
       // Gate eases open over 0.4 s.
       const open = Math.min(1, Math.max(0, t / 0.4));
       setGate(open * open * (3 - 2 * open));
     },
 
     afterStep() {
+      if (course && opened) course.kick();
       const out: CountryBall[] = [];
       for (const ball of sim.balls) {
         if (!ball.alive || safe.has(ball.id)) continue;
@@ -252,6 +325,11 @@ function createDropRules(sim: Simulation): ModeRules {
         if (sim.tick - settledAt < SETTLE_TICKS) return;
         if (sim.status === "running") startRound();
       }
+    },
+
+    cameraMoment() {
+      if ((sim.tick - roundStart) / TICK_RATE < GATE_DELAY) return "setup";
+      return settledAt === null ? "live" : "hold";
     },
 
     rank() {

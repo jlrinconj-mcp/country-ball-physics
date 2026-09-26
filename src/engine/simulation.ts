@@ -10,7 +10,7 @@ import { createRandom, hashString, type Random } from "./random";
 import { spawnPoints } from "./spawn";
 import type { ModeId, ObstacleSpec, PhysicsSettings, SimulationConfig, Vec2, WorldLayout } from "./types";
 
-export type CameraMode = "fixed" | "follow-leader" | "follow-action" | "follow-group";
+export type CameraMode = "fixed" | "follow-leader" | "follow-action" | "follow-group" | "leader-last";
 
 export interface ScenarioDefinition {
   id: string;
@@ -49,7 +49,8 @@ export interface ModeDefinition {
   recommendedPhysics?: Partial<PhysicsSettings>;
   /** Suggested time limit in seconds. */
   defaultDuration?: number;
-  autoBallRadius(count: number, scenario: string): number;
+  /** `map`: the config's map, when it names one. */
+  autoBallRadius(count: number, scenario: string, map?: string): number;
   createLayout(ctx: LayoutContext): WorldLayout;
   createRules(sim: Simulation): ModeRules;
 }
@@ -84,6 +85,12 @@ export interface ModeRules {
   cameraSubjects?(): CountryBall[];
   /** Frame the whole arena whatever the camera mode (e.g. ring arenas). */
   cameraFixed?(): boolean;
+  /**
+   * What the camera should be doing: "setup" frames the whole field (before
+   * a start), "live" follows the race, "hold" keeps the shot (a result on
+   * screen). Default: "live".
+   */
+  cameraMoment?(): "setup" | "live" | "hold";
   hud(): ModeHud;
   /** maxDuration reached: the mode must declare a winner. */
   onTimeout(): void;
@@ -196,7 +203,7 @@ export class Simulation {
     const participants = selectParticipants(config, countries);
     const count = participants.length;
     this.ballRadius = clamp(
-      Math.round(definition.autoBallRadius(count, this.scenario) * config.physics.ballScale * 2) / 2,
+      Math.round(definition.autoBallRadius(count, this.scenario, config.map) * config.physics.ballScale * 2) / 2,
       6,
       90,
     );

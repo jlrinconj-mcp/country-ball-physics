@@ -208,3 +208,26 @@ describe("golden fingerprints (cross-engine determinism)", () => {
     expect(`${r?.fingerprint}:${r?.winner.cca3}:${r?.ticks}`).toBe(expected);
   });
 });
+
+describe("every mode on any map", () => {
+  const maps = ["plinko", "hammers", "ring", "triple-ring"];
+  const modes = ["race", "marble-race", "last-country-standing", "elimination-drop", "last-place-elimination"] as const;
+  const cases = modes.flatMap((mode) => maps.map((map) => [mode, map] as const));
+  const field = makeTestCountries(10);
+
+  it.each(cases)("%s on %s plays to a winner, identically twice", (mode, map) => {
+    const cfg: SimulationConfig = {
+      ...DEFAULT_CONFIG,
+      ...modeDefaults(mode),
+      map,
+      seed: `any-map-${mode}-${map}`,
+      countries: field.map((c) => c.cca3),
+      maxParticipants: 10,
+    };
+    const a = run(cfg);
+    const b = run(cfg);
+    expect(a.decidedBy).toBe("physics");
+    expect(b.fingerprint).toBe(a.fingerprint);
+    expect(a.ranking.map((r) => r.place)).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
+  }, 60_000);
+});

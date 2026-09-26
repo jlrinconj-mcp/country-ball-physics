@@ -29,7 +29,8 @@ describe("planSimulation", () => {
     expect(lpe.config.maxParticipants).toBe(40);
     expect(planSimulation({ mode: "marble-race", countries: "all", seed: "m", map: "plinko" }, synthetic).config.map).toBe("plinko");
     expect(() => planSimulation({ mode: "race", countries: "all", seed: "m", map: "atlantis" }, synthetic)).toThrow(/Unknown map/);
-    expect(() => planSimulation({ mode: "last-country-standing", countries: "all", seed: "m", map: "plinko" }, synthetic)).toThrow(/Maps apply/);
+    expect(planSimulation({ mode: "last-country-standing", countries: "all", seed: "m", map: "plinko" }, synthetic).config.map).toBe("plinko");
+    expect(planSimulation({ mode: "elimination-drop", countries: "all", seed: "m", map: "ring" }, synthetic).config.map).toBe("ring");
   });
 
   it("applies mode defaults, format and tournaments", () => {

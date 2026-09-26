@@ -6,7 +6,7 @@ import type { CameraMode } from "@/engine/simulation";
 import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
 import { getMode, listModes, modeDefaults } from "@/modes";
 import { TOURNAMENT_SIZES, type TournamentSize } from "@/modes/tournament";
-import { findMap, listTrackMaps } from "@/tracks/maps";
+import { findMap, listMaps } from "@/tracks/maps";
 import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
@@ -19,6 +19,7 @@ export const CAMERA_OPTIONS: { value: CameraMode; label: string }[] = [
   { value: "follow-leader", label: "Follow leader" },
   { value: "follow-action", label: "Follow action" },
   { value: "follow-group", label: "Follow main group" },
+  { value: "leader-last", label: "Leader ↔ Last (Shorts)" },
 ];
 
 export function seedPrefix(mode: ModeId): string {
@@ -107,12 +108,12 @@ export function ControlPanel({
           onChange={(id) => onConfig({ ...config, scenario: id })}
         />
         {scenario && <p className="text-xs text-zinc-500">{scenario.description}</p>}
-        {(config.mode === "race" || config.mode === "marble-race") && (
+        {config.mode !== "last-place-elimination" && (
           <>
             <Select
               label="Map"
               value={config.map ?? ""}
-              options={[{ value: "", label: "Procedural (scenario)" }, ...listTrackMaps().map((m) => ({ value: m.id, label: m.label }))]}
+              options={[{ value: "", label: "Mode's own (scenario)" }, ...listMaps().map((m) => ({ value: m.id, label: m.label }))]}
               onChange={(id) => onConfig({ ...config, map: id || undefined, track: undefined })}
             />
             {findMap(config.map) && <p className="text-xs text-zinc-500">{findMap(config.map)?.description}</p>}
@@ -120,7 +121,7 @@ export function ControlPanel({
         )}
       </Section>
 
-      {(config.mode === "race" || config.mode === "marble-race") && <TrackEditor config={config} onConfig={onConfig} />}
+      {(config.mode === "race" || config.mode === "marble-race") && !findMap(config.map)?.arena && <TrackEditor config={config} onConfig={onConfig} />}
 
       <Section
         title="Countries"
