@@ -88,6 +88,15 @@ export interface Course {
   kick(): void;
 }
 
+export interface ArenaOptions {
+  /**
+   * Races: the gaps start shut and grow from nothing on "GO!", only wide
+   * enough for a ball after this many seconds, then keep widening. Without
+   * it, the gaps open at a ball's width straight away (elimination modes).
+   */
+  growFor?: number;
+}
+
 export function courseFor(sim: Simulation, map: MapDefinition): Course {
   return map.arena ? arenaCourse(sim, map.arena) : trackCourse(sim);
 }
@@ -114,7 +123,7 @@ export function trackCourse(sim: Simulation): Course {
   };
 }
 
-export function arenaCourse(sim: Simulation, arena: ArenaId): Course {
+export function arenaCourse(sim: Simulation, arena: ArenaId, options: ArenaOptions = {}): Course {
   const plans = ringsFor(arena, sim.ballRadius, sim.random.fork("layout").fork("rings")).map((p) => ({ ...p, speed: p.speed * ARENA_SPIN[arena] }));
   const rings = plans.map((plan) => ({ plan, gap: plan.gap, obstacle: sim.obstacles.find((o) => o.id === plan.id) as Obstacle }));
   const outer = plans[plans.length - 1];
@@ -146,12 +155,24 @@ export function arenaCourse(sim: Simulation, arena: ArenaId): Course {
     },
     // Closed rings before the start: nobody slips out early.
     close: () => rings.forEach((ring) => setGap(ring, 0)),
-    open: () => rings.forEach((ring) => setGap(ring, ring.plan.gap)),
+    open: () => {
+      if (options.growFor === undefined) rings.forEach((ring) => setGap(ring, ring.plan.gap));
+    },
     update(racing) {
       // Every half second the gaps open a little wider until everyone is out.
       if (racing === null || sim.tick % 30 !== 0) return;
-      const k = Math.min(1, racing / widen);
-      for (const ring of rings) setGap(ring, ring.plan.gap + (ring.plan.maxGap + extra - ring.plan.gap) * k);
+      const grow = options.growFor;
+      for (const ring of rings) {
+        const widest = ring.plan.maxGap + extra;
+        if (grow !== undefined) {
+          // From shut to a ball's width over `grow` seconds, then on to the widest.
+          const gap = racing <= grow ? (ring.plan.gap * racing) / grow : ring.plan.gap + ((widest - ring.plan.gap) * (racing - grow)) / (widen * 1.5);
+          setGap(ring, Math.min(widest, gap));
+        } else {
+          const k = Math.min(1, racing / widen);
+          setGap(ring, ring.plan.gap + (widest - ring.plan.gap) * k);
+        }
+      }
     },
     kick: () => chaos(0.8),
   };

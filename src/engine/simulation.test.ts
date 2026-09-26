@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createSimulation, listModes, modeDefaults } from "@/modes";
 import { previewSequence, RACE_SCENARIOS } from "@/modes/race";
 import { DEFAULT_CONFIG } from "./defaults";
+import { TICK_RATE } from "./physicsWorld";
 import type { SimulationEvents } from "./simulation";
 import { makeTestCountries } from "./testing";
 import type { SimulationConfig } from "./types";
@@ -229,5 +230,15 @@ describe("every mode on any map", () => {
     expect(a.decidedBy).toBe("physics");
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(a.ranking.map((r) => r.place)).toEqual(Array.from({ length: 10 }, (_, i) => i + 1));
+  }, 60_000);
+  it.each(["ring", "double-ring", "triple-ring"])("a race on %s isn't over the moment it starts", (map) => {
+    // The gaps grow from shut on "GO!": nobody gets out in the first 4 s.
+    const sim = createSimulation({ ...DEFAULT_CONFIG, ...modeDefaults("race"), map, seed: `slow-${map}`, countries: field.map((c) => c.cca3), maxParticipants: 10 }, field);
+    let first = Infinity;
+    sim.events.on("countryFinished", ({ tick }) => (first = Math.min(first, tick)));
+    sim.runToEnd();
+    sim.destroy();
+    expect(first / TICK_RATE).toBeGreaterThan(3 + 4);
+    expect(Number.isFinite(first)).toBe(true);
   }, 60_000);
 });

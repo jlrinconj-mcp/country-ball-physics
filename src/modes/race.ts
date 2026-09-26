@@ -12,8 +12,13 @@ function isMiddleModule(kind: string): kind is ModuleKind {
   return (MIDDLE_MODULES as readonly string[]).includes(kind);
 }
 
-/** Countdown before an arena race: the rings open on "GO!". */
+/** Countdown before an arena race: the rings start opening on "GO!". */
 const ARENA_COUNTDOWN = 3;
+/**
+ * Seconds after "GO!" before a ring's gap is wide enough for a ball: with
+ * everyone piled at the bottom, a gap at full width would be won in a second.
+ */
+const ARENA_GROW = 5;
 
 export interface RaceScenario {
   id: string;
@@ -90,7 +95,7 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
   // On a ring arena the race is to escape: the rings open on "GO!" and the
   // first out wins.
   const map = configMap(sim);
-  const arena = map?.arena ? arenaCourse(sim, map.arena) : null;
+  const arena = map?.arena ? arenaCourse(sim, map.arena, { growFor: ARENA_GROW }) : null;
   const gateOpensAt = arena ? ARENA_COUNTDOWN : (sim.layout.gateOpensAt ?? 0);
   const finishZones = sim.zones.filter((z) => z.kind === "finish");
   const eliminators = arena ? [] : sim.zones.filter((z) => z.kind === "eliminate");
