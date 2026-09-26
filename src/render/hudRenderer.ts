@@ -75,9 +75,17 @@ export function drawHud(
     drawEliminated(ctx, info.eliminated, width / 2, slotY + 44 * unit, unit, atlas, textWidth);
   }
 
-  if (info.title) drawTitle(ctx, info.title, format, unit, theme);
-  // Under a title card the countdown moves down out of its way.
-  if (info.banner) drawBanner(ctx, info.banner, format, unit, theme, now, info.title ? 0.86 : 0.55);
+  // Title cards and countdowns sit below the start line wherever the camera
+  // puts it, so a close-up of the start box never ends up under the text.
+  const line = startLineY(frame, safe);
+  const below = (y: number, gap: number) => (line === null ? y : Math.min(safe.y + safe.h - gap, Math.max(y, line + gap)));
+  const titleY = info.title ? below(safe.y + safe.h * 0.68, 110 * unit) : null;
+  if (info.title && titleY !== null) drawTitle(ctx, info.title, titleY, format, unit, theme);
+  if (info.banner) {
+    // Under a title card the countdown moves down out of its way.
+    const bannerY = titleY !== null ? Math.max(safe.y + safe.h * 0.86, titleY + 230 * unit) : below(safe.y + safe.h * 0.55, 250 * unit);
+    drawBanner(ctx, info.banner, format, unit, theme, now, Math.min(bannerY, safe.y + safe.h - 90 * unit));
+  }
 
   // Timer, top-left of the safe area.
   const clock = sim.finishedTick !== null ? sim.finishedTick * TICK_DT : now;
@@ -191,10 +199,17 @@ function drawEliminated(
 }
 
 /** Title card ("32 COUNTRIES" / "LAST PLACE IS ELIMINATED", "FINAL 3"). */
-function drawTitle(ctx: CanvasRenderingContext2D, title: { text: string; sub?: string }, format: FormatSpec, unit: number, theme: RenderTheme): void {
+/** Screen y of the start line (track modes) when it's inside the safe area. */
+function startLineY(frame: Frame, safe: { y: number; h: number }): number | null {
+  const startY = frame.sim.layout.startY;
+  if (startY === undefined) return null;
+  // The gate (22 px thick) sits just below the spawn box; measure under it.
+  const y = frame.camera.worldToScreen(0, startY + 40).y;
+  return y >= safe.y && y <= safe.y + safe.h ? y : null;
+}
+
+function drawTitle(ctx: CanvasRenderingContext2D, title: { text: string; sub?: string }, y: number, format: FormatSpec, unit: number, theme: RenderTheme): void {
   const safe = safeRect(format);
-  // Low on screen: the cameras frame the start box in the middle.
-  const y = safe.y + safe.h * 0.68;
   drawText(ctx, title.text, format.width / 2, y, {
     size: 120 * unit,
     weight: 900,
@@ -277,12 +292,12 @@ function drawFeed(
 }
 
 /** Big centred text (countdown, "GO!"): pops in at the start of each second. */
-function drawBanner(ctx: CanvasRenderingContext2D, text: string, format: FormatSpec, unit: number, theme: RenderTheme, now: number, at: number): void {
+function drawBanner(ctx: CanvasRenderingContext2D, text: string, format: FormatSpec, unit: number, theme: RenderTheme, now: number, y: number): void {
   const safe = safeRect(format);
   const phase = now % 1;
   const scale = 1 + Math.max(0, 0.25 - phase) * 1.6;
   ctx.globalAlpha = Math.min(1, 0.35 + (1 - phase));
-  drawText(ctx, text, format.width / 2, safe.y + safe.h * at, {
+  drawText(ctx, text, format.width / 2, y, {
     maxWidth: safe.w,
     size: 220 * unit * scale,
     weight: 900,
