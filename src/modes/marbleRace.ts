@@ -16,5 +16,5 @@ export const marbleRace = createRaceMode({
   description: "A marble run of ramps, tunnels, wheels, funnels and moving platforms. First country across the line wins.",
   headline: "WHICH MARBLE WINS?",
   scenarios: MARBLE_SCENARIOS,
-  maxRadius: 24,
+  maxRadius: 28,
 });

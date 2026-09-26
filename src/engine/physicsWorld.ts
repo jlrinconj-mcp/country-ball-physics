@@ -149,9 +149,13 @@ export class PhysicsWorld {
     setAngle(body, angle, false);
   }
 
-  /** Advance one tick (several sub-steps). */
-  step(): void {
-    for (let i = 0; i < SUBSTEPS; i++) Engine.update(this.engine, SUBSTEP_MS);
+  /**
+   * Advance one sub-step (1/SUBSTEPS of a tick). The simulation calls this
+   * SUBSTEPS times per tick, posing kinematic obstacles before each call so
+   * the solver sees the same motion the obstacles actually make.
+   */
+  substep(): void {
+    Engine.update(this.engine, SUBSTEP_MS);
   }
 
   static clampSpeed(body: Matter.Body, maxSpeed: number): void {

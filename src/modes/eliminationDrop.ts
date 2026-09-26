@@ -144,6 +144,7 @@ export const eliminationDrop: ModeDefinition = {
   defaultCamera: "follow-group",
   defaultParticipants: 48,
   defaultDuration: 240,
+  recommendedPhysics: { gravity: 1.6, maxSpeed: 20 },
 
   autoBallRadius(count) {
     return autoRadius(1000 * 380, count, 0.3, 11, 26);

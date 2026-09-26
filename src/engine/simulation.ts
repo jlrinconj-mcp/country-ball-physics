@@ -236,6 +236,7 @@ export class Simulation {
 
     if (this.status === "running") this.rules.beforeStep?.();
 
+    const maxSpeed = this.config.physics.maxSpeed;
     for (let s = 1; s <= SUBSTEPS; s++) {
       const t = (this.tick + s / SUBSTEPS) * TICK_DT;
       for (const obstacle of this.obstacles) {
@@ -243,14 +244,15 @@ export class Simulation {
         const pose = obstacle.poseAt(t);
         this.physics.setKinematicTransform(obstacle.body, pose, pose.angle);
       }
-      this.physics.step();
+      this.physics.substep();
       this.applyKicks();
+      // Cap after every sub-step (kicks and moving obstacles act mid-tick), so
+      // the cap truly bounds how far a ball moves: no visible jumps.
+      for (const ball of this.balls) if (ball.body) PhysicsWorld.clampSpeed(ball.body, maxSpeed);
     }
 
-    const maxSpeed = this.config.physics.maxSpeed;
     for (const ball of this.balls) {
       if (ball.body) {
-        PhysicsWorld.clampSpeed(ball.body, maxSpeed);
         ball.syncFromBody();
       } else if (ball.ghost) {
         this.updateGhost(ball);

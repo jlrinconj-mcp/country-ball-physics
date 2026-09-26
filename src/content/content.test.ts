@@ -28,7 +28,7 @@ describe("planSimulation", () => {
     expect(plan.config.tournament?.size).toBe(32);
     expect(plan.config.mode).toBe("race");
     expect(plan.display.format).toBe("1:1");
-    expect(plan.config.physics.maxSpeed).toBe(14);
+    expect(plan.config.physics).toMatchObject({ gravity: 1.6, maxSpeed: 18 });
   });
 });
 

@@ -188,10 +188,10 @@ describe("golden fingerprints (cross-engine determinism)", () => {
   // engine or mode change alters these, update them in the same commit and
   // say so: old seeds will replay differently from then on.
   const GOLDEN: Record<string, string> = {
-    "last-country-standing": "bcb37601:AVX:1877",
-    race: "bd2e7238:AWX:929",
-    "elimination-drop": "11439d17:ALX:1291",
-    "marble-race": "f66433c4:AEX:843",
+    "last-country-standing": "44bfad49:AJX:2731",
+    race: "9c342593:AUX:1581",
+    "elimination-drop": "7e7efca3:APX:3026",
+    "marble-race": "27137b5a:ASX:1351",
   };
   const golden = makeTestCountries(24);
 

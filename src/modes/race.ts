@@ -58,11 +58,12 @@ export function createRaceMode(options: {
     scenarios: options.scenarios.map(({ id, label, description }) => ({ id, label, description })),
     defaultCamera: "follow-action",
     defaultParticipants: 32,
-    recommendedPhysics: { maxSpeed: 14 },
+    // Stronger gravity keeps races Shorts-length with honest, real-time physics.
+    recommendedPhysics: { gravity: 1.6, maxSpeed: 18 },
     defaultDuration: 120,
 
     autoBallRadius(count) {
-      return autoRadius(1000 * 420, count, 0.3, 11, options.maxRadius ?? 28);
+      return autoRadius(1000 * 420, count, 0.3, 11, options.maxRadius ?? 32);
     },
 
     createLayout({ scenario, random, count, ballRadius, track: custom }) {
@@ -167,9 +168,9 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
 }
 
 export const RACE_SCENARIOS: RaceScenario[] = [
-  { id: "classic", label: "Classic", description: "Procedural track, 9 modules (~30–45 s).", length: 9, difficulty: 0.5 },
-  { id: "sprint", label: "Sprint", description: "Short procedural track, 5 modules (~20 s).", length: 5, difficulty: 0.4 },
-  { id: "marathon", label: "Marathon", description: "Long procedural track, 14 modules (~60 s).", length: 14, difficulty: 0.6 },
+  { id: "classic", label: "Classic", description: "Procedural track, 9 modules (~25–40 s).", length: 9, difficulty: 0.5 },
+  { id: "sprint", label: "Sprint", description: "Short procedural track, 5 modules (~15–20 s).", length: 5, difficulty: 0.4 },
+  { id: "marathon", label: "Marathon", description: "Long procedural track, 14 modules (~40–55 s).", length: 14, difficulty: 0.6 },
 ];
 
 export const race = createRaceMode({

@@ -91,17 +91,18 @@ const drop: TrackModuleDefinition = {
 const zigzag: TrackModuleDefinition = {
   kind: "zigzag",
   label: "Zigzag",
-  weight: 6,
+  weight: 3,
   build(ctx) {
     const { left, right, y, random } = ctx;
     const width = right - left;
-    const n = random.int(4, 6);
-    const spacing = 200 + ctx.ballRadius * 2;
-    const length = width * 0.76;
+    // Few, fairly steep ramps: balls visibly roll and drop instead of crawling.
+    const n = random.int(3, 4);
+    const spacing = 230 + ctx.ballRadius * 2;
+    const length = width * 0.68;
     let side = random.sign();
     const obstacles: ObstacleSpec[] = [];
     for (let i = 0; i < n; i++) {
-      const slope = random.float(0.1, 0.17);
+      const slope = random.float(0.24, 0.34);
       const top = y + 80 + i * spacing;
       const from = { x: side < 0 ? left - 10 : right + 10, y: top };
       const to = { x: from.x - side * length * Math.cos(slope), y: top + length * Math.sin(slope) };
