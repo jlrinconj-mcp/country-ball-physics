@@ -80,6 +80,7 @@ Buttons: **Generate Simulation** (apply the settings) · **Restart** (same run f
 | `npm test` | Unit, determinism and mode tests (Vitest) |
 | `npm run check` | Lint + typecheck + tests + build |
 | `npm run generate -- …` | Content factory (see below) |
+| `npm run tournament -- …` | Custom tournaments from JSON specs (see below) |
 | `npm run probe -- --mode=race --runs=5` | Headless stats: duration, winner, lead changes, CPU per tick |
 | `npm run render:frames -- --mode=race --times=0,5,end` | Render PNG frames to `output/frames` |
 
@@ -110,6 +111,43 @@ npm run generate -- --mode=race --video                               # MP4, nee
 ```
 
 Each run writes `output/runs/<seed>/metadata.json` (request, config, result, tournament bracket, metadata) and `thumbnail.png`, and appends a line to `output/runs/index.jsonl`. Titles never contain the winner; the spoiler lives in `metadata.result`.
+
+## Custom tournaments
+
+Describe a tournament in JSON and run it headless: seeded draw, every heat, the bracket, and a thumbnail per heat.
+
+```json
+{
+  "name": "Copa América de Física",
+  "seed": "copa-america-2026",
+  "countries": "south-america",
+  "size": 8,
+  "heatMode": "marble-race",
+  "heatScenario": "switchbacks",
+  "language": "es"
+}
+```
+
+```bash
+npm run tournament -- --spec=tournaments/copa-america.json
+npm run tournament -- --spec=tournaments/world-cup-32.json --count=10 --seed=wc   # wc-001 … wc-010
+npm run tournament -- --countries=europe --size=16 --heat-mode=marble-race --name="Euro Marbles"
+npm run tournament -- --spec=tournaments/custom-track.json --frames=30            # PNG frames of the final
+```
+
+Spec fields: `name`, `seed`, `countries` (`"all"`, a preset, a continent or ISO codes), `size` (8/16/32/64), `heatMode`, `heatScenario` (or `"random"`), `track` (custom module sequence for race heats), `physics` overrides, `maxDuration`, `format`, `language`, `includeTerritories`. Invalid specs fail with a list of what to fix. Each run writes `output/tournaments/<seed>/` with `bracket.md`, `bracket.json` (every heat's ranking, qualifiers, duration and fingerprint), `metadata.json` and `heats/*.png`. Examples live in [`tournaments/`](tournaments).
+
+## Smoothness guarantees
+
+`src/engine/smoothness.test.ts` and `simulationLoop.test.ts` pin down what "smooth" means, for every race and marble scenario:
+
+- no ball sits still for more than 4 s (an anti-stall nudge kicks in at 3 s), and balls crawl (< 120 px/s) less than 12% of the time
+- no ball tunnels out of the track, and no ball moves much more than its speed cap in one tick (no teleports)
+- more gravity always makes races faster
+- cameras never jump more than 8% of the frame per 1/60 s, and follow cameras keep the leader in shot
+- the loop plays in real time at 144, 60, 30, 5 and even 1.5 FPS, drops long stalls instead of fast-forwarding, and never spirals when the CPU can't keep up
+
+When the display frame rate drops below 24 FPS (some embedded previews throttle animation), the results panel says so: the simulation still runs at real speed, only the drawing gets choppy.
 
 ## Environment variables
 
@@ -170,7 +208,7 @@ The engine, tracks, modes and content modules have no DOM or React dependency, s
 
 ## Simulation architecture
 
-- **Fixed timestep.** The simulation advances in ticks of 1/60 s, each split into 2 physics sub-steps. `Simulation.step()` has no notion of wall-clock time.
+- **Fixed timestep.** The simulation advances in ticks of 1/60 s, each split into 2 physics sub-steps (kinematic obstacles are posed and speeds capped before/after every sub-step). `Simulation.step()` has no notion of wall-clock time.
 - **Accumulator loop.** In the browser, real elapsed time × playback speed fills an accumulator. Whole ticks are drained from it, and rendering interpolates between the last two ticks (`alpha`). Frame rate and speed decide *how many* ticks run per frame, never *what* happens in them.
 - **Data-first worlds.** Modes and the track generator describe a `WorldLayout`: obstacles, zones and spawn area as plain data (shapes plus scripted motion). The engine builds Matter.js bodies from it.
 - **Kinematic obstacles.** Rings, spinners, wheels, gates and platforms are static bodies posed every sub-step from an absolute function of time (or by rules, for reusable gates), with velocity handed to the solver so they push balls. No drift, identical on every replay.

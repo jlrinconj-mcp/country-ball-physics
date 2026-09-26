@@ -62,7 +62,8 @@ export function buildMetadata(plan: SimulationPlan, outcome: ContentOutcome, lan
   const fill = (template: string) =>
     template.replace("{label}", plan.label).replace("{n}", String(plan.participants));
 
-  const title = fill(random.pick(TITLES[language][kind]));
+  const generated = fill(random.pick(TITLES[language][kind]));
+  const title = plan.request.name ? plan.request.name : generated;
   const caption = random.pick(CAPTIONS[language]);
   const labelTag = plan.label.toLowerCase().replace(/[^a-z0-9]+/g, "");
   const hashtags = [
@@ -74,10 +75,12 @@ export function buildMetadata(plan: SimulationPlan, outcome: ContentOutcome, lan
     "shorts",
   ];
   const seconds = Math.round(outcome.seconds);
+  const intro = plan.request.name ? `${plan.request.name} · ${generated}\n\n` : "";
   const description =
-    language === "es"
+    intro +
+    (language === "es"
       ? `${plan.participants} países, un ganador. Simulación física reproducible (seed: ${plan.seed}).\n\n${hashtags.map((h) => `#${h}`).join(" ")}`
-      : `${plan.participants} countries, one winner. A reproducible physics simulation (seed: ${plan.seed}).\n\n${hashtags.map((h) => `#${h}`).join(" ")}`;
+      : `${plan.participants} countries, one winner. A reproducible physics simulation (seed: ${plan.seed}).\n\n${hashtags.map((h) => `#${h}`).join(" ")}`);
   const result =
     language === "es"
       ? `${outcome.winnerEmoji} ${outcome.winnerName} gana en ${seconds}s`

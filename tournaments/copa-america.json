@@ -1,0 +1,9 @@
+{
+  "name": "Copa América de Física",
+  "seed": "copa-america-2026",
+  "countries": "south-america",
+  "size": 8,
+  "heatMode": "marble-race",
+  "heatScenario": "switchbacks",
+  "language": "es"
+}

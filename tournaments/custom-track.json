@@ -1,0 +1,10 @@
+{
+  "name": "Machines Invitational",
+  "seed": "machines-inv",
+  "countries": ["COL", "ARG", "BRA", "MEX", "USA", "CAN", "ESP", "FRA", "DEU", "ITA", "JPN", "KOR", "AUS", "NGA", "EGY", "IND"],
+  "size": 16,
+  "heatMode": "race",
+  "heatScenario": "classic",
+  "track": { "sequence": ["zigzag", "wheel", "spinner", "bottleneck", "zigzag", "platforms", "funnel"], "difficulty": 0.7 },
+  "physics": { "gravity": 1.8 }
+}

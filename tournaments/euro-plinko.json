@@ -1,0 +1,8 @@
+{
+  "name": "Euro Plinko Cup",
+  "seed": "euro-plinko",
+  "countries": "europe",
+  "size": 16,
+  "heatMode": "elimination-drop",
+  "heatScenario": "bumpers"
+}

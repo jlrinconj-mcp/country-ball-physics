@@ -1,0 +1,8 @@
+{
+  "name": "World Cup of Physics",
+  "seed": "world-cup-2026",
+  "countries": "all",
+  "size": 32,
+  "heatMode": "race",
+  "heatScenario": "classic"
+}
