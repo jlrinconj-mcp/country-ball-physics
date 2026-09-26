@@ -149,3 +149,47 @@ describe("Last Place Elimination", () => {
     expect(c.result.fingerprint).not.toBe(a.result.fingerprint);
   }, 60_000);
 });
+
+describe("Last Place Elimination on every map", () => {
+  const small = makeTestCountries(10);
+  const cfg = (map: string): SimulationConfig => ({
+    ...DEFAULT_CONFIG,
+    ...modeDefaults("last-place-elimination"),
+    scenario: map,
+    seed: `every-${map}`,
+    countries: small.map((c) => c.cca3),
+    maxParticipants: 10,
+  });
+
+  it.each(listMaps().map((m) => m.id))("%s plays down to one winner, identically twice", (map) => {
+    const run = () => {
+      const sim = createSimulation(cfg(map), small);
+      let rounds = 0;
+      sim.events.on("roundStarted", () => rounds++);
+      const result = sim.runToEnd() as SimulationResult;
+      sim.destroy();
+      return { result, rounds };
+    };
+    const a = run();
+    const b = run();
+    expect(a.result.decidedBy).toBe("physics");
+    expect(a.rounds).toBe(9);
+    expect(a.result.ranking.filter((r) => r.status === "eliminated")).toHaveLength(9);
+    expect(b.result.fingerprint).toBe(a.result.fingerprint);
+  }, 30_000);
+
+  it("arenas: the rings stay shut during the intro, then balls escape to safety", () => {
+    const sim = createSimulation(cfg("double-ring"), small);
+    let escapedEarly = 0;
+    let parked = 0;
+    sim.events.on("countryParked", () => parked++);
+    for (let i = 0; i < 3 * TICK_RATE - 5; i++) {
+      sim.step();
+      escapedEarly += sim.balls.filter((b) => Math.hypot(b.x - 540, b.y - 900) > 500).length;
+    }
+    expect(escapedEarly).toBe(0);
+    while (parked === 0 && sim.tick < 20 * TICK_RATE) sim.step();
+    expect(parked).toBeGreaterThan(0);
+    sim.destroy();
+  });
+});

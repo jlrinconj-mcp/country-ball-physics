@@ -50,6 +50,9 @@ export const THEMES: Record<ThemeId, RenderTheme> = {
       funnel: "#dfe6f3",
       tunnel: "#7f8db0",
       gate: "#ff9f43",
+      hammer: "#c38bff",
+      piston: "#ff8a5c",
+      trapdoor: "#ffb547",
     },
   },
   paper: {
@@ -80,6 +83,9 @@ export const THEMES: Record<ThemeId, RenderTheme> = {
       funnel: "#1d2433",
       tunnel: "#8a93a8",
       gate: "#f07b20",
+      hammer: "#7b3fd1",
+      piston: "#c2410c",
+      trapdoor: "#b86e00",
     },
   },
 };

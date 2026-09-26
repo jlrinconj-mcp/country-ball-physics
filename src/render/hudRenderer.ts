@@ -79,7 +79,11 @@ export function drawHud(
   // puts it, so a close-up of the start box never ends up under the text.
   const line = startLineY(frame, safe);
   const below = (y: number, gap: number) => (line === null ? y : Math.min(safe.y + safe.h - gap, Math.max(y, line + gap)));
-  const titleY = info.title ? below(safe.y + safe.h * 0.68, 110 * unit) : null;
+  const titleY = !info.title
+    ? null
+    : info.title.worldY !== undefined
+      ? frame.camera.worldToScreen(0, info.title.worldY).y
+      : below(safe.y + safe.h * 0.68, 110 * unit);
   if (info.title && titleY !== null) drawTitle(ctx, info.title, titleY, format, unit, theme);
   if (info.banner) {
     // Under a title card the countdown moves down out of its way.

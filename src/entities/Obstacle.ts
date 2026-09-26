@@ -77,8 +77,11 @@ export class Obstacle {
   poseAt(time: number): Pose {
     const motion = this.motion;
     if (!motion) return { x: this.origin.x, y: this.origin.y, angle: this.baseAngle };
-    if (motion.type === "rotate") {
-      const theta = motion.speed * time + (motion.phase ?? 0);
+    if (motion.type === "rotate" || motion.type === "swing") {
+      const theta =
+        motion.type === "rotate"
+          ? motion.speed * time + (motion.phase ?? 0)
+          : motion.amplitude * Math.sin((Math.PI * 2 * time) / motion.period + (motion.phase ?? 0));
       const dx = this.origin.x - motion.pivot.x;
       const dy = this.origin.y - motion.pivot.y;
       const c = Math.cos(theta);
@@ -88,6 +91,10 @@ export class Obstacle {
         y: motion.pivot.y + dx * s + dy * c,
         angle: this.baseAngle + theta,
       };
+    }
+    if (motion.type === "cycle") {
+      const k = cycleAmount(motion, time);
+      return { x: this.origin.x + motion.offset.x * k, y: this.origin.y + motion.offset.y * k, angle: this.baseAngle };
     }
     if (motion.type === "manual") {
       return { x: this.origin.x + this.manualOffset.x, y: this.origin.y + this.manualOffset.y, angle: this.baseAngle };
@@ -121,6 +128,16 @@ export class Obstacle {
     this.y = this.body.position.y;
     this.angle = this.body.angle;
   }
+}
+
+/** How far out a `cycle` motion is at `time`, 0..1 (smoothstep ease). */
+export function cycleAmount(motion: Extract<MotionSpec, { type: "cycle" }>, time: number): number {
+  const u = (((time / motion.period + (motion.phase ?? 0)) % 1) + 1) % 1;
+  const ease = (t: number) => t * t * (3 - 2 * t);
+  if (u < motion.out) return ease(u / motion.out);
+  if (u < motion.out + motion.hold) return 1;
+  if (u < motion.out + motion.hold + motion.back) return 1 - ease((u - motion.out - motion.hold) / motion.back);
+  return 0;
 }
 
 function toRenderShapes(shapes: ShapeSpec[], origin: Vec2): RenderShape[] {

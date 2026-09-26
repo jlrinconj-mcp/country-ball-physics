@@ -29,7 +29,7 @@ export interface ModeHud {
   /** Big centred text (countdowns, "GO!", "ROUND 2"). */
   banner?: string;
   /** Centred title card, e.g. "32 COUNTRIES" over "LAST PLACE IS ELIMINATED". */
-  title?: { text: string; sub?: string };
+  title?: { text: string; sub?: string; worldY?: number };
   /** One ball called out under the counter instead of the leader. */
   featured?: { label: string; ball: CountryBall; tone: "accent" | "danger" };
   /** Balls already out, most recent first (drawn as a strip of flags). */
@@ -82,6 +82,8 @@ export interface ModeRules {
    * the current shot.
    */
   cameraSubjects?(): CountryBall[];
+  /** Frame the whole arena whatever the camera mode (e.g. ring arenas). */
+  cameraFixed?(): boolean;
   hud(): ModeHud;
   /** maxDuration reached: the mode must declare a winner. */
   onTimeout(): void;

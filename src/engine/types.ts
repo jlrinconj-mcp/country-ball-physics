@@ -44,7 +44,10 @@ export type ObstacleStyle =
   | "wheel"
   | "funnel"
   | "tunnel"
-  | "gate";
+  | "gate"
+  | "hammer"
+  | "piston"
+  | "trapdoor";
 
 /** Scripted (kinematic) motion. Transforms are absolute functions of time. */
 export type MotionSpec =
@@ -53,7 +56,15 @@ export type MotionSpec =
   /** One-shot move by `offset`, starting at `start` seconds (gates, trapdoors). */
   | { type: "slide"; offset: Vec2; start: number; duration: number }
   /** Pose driven by mode rules through `Obstacle.manualOffset` (reusable gates). */
-  | { type: "manual" };
+  | { type: "manual" }
+  /** Pendulum: swings ±amplitude radians about `pivot` (hammers, blades). */
+  | { type: "swing"; pivot: Vec2; amplitude: number; period: number; phase?: number }
+  /**
+   * Repeating move by `offset` and back: out over `out`, held for `hold`,
+   * back over `back` (fractions of `period`), then rests. Pistons slam out
+   * fast and rise slowly; trapdoors slide open and shut. `phase` in 0..1.
+   */
+  | { type: "cycle"; offset: Vec2; period: number; out: number; hold: number; back: number; phase?: number };
 
 export interface ObstacleSpec {
   id: string;

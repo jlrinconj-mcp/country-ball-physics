@@ -75,16 +75,44 @@ function sweep(spec: ObstacleSpec): Primitive[] {
     const radius = Math.max(...base.map((prim) => farthest(prim, p)));
     return [{ kind: "capsule", a: p, b: p, r: radius }];
   }
+  if (motion.type === "swing") {
+    // The arc a pendulum sweeps, sampled finely enough to leave no notches.
+    const steps = 48;
+    return Array.from({ length: steps + 1 }, (_, i) => -motion.amplitude + (2 * motion.amplitude * i) / steps).flatMap((a) =>
+      base.map((prim) => rotatePrim(prim, motion.pivot, a)),
+    );
+  }
+  if (motion.type === "cycle") {
+    // Hull of the rest pose and the fully-out pose.
+    const half = { x: motion.offset.x / 2, y: motion.offset.y / 2 };
+    return base.map((prim): Primitive => {
+      const moved = shiftPrim(prim, half);
+      return sweepAlong(moved, half);
+    });
+  }
   const d = { x: motion.axis.x * motion.amplitude, y: motion.axis.y * motion.amplitude };
-  return base.map((prim): Primitive => {
-    if (prim.kind === "capsule") {
-      // Capsule swept along d: hull of its two end discs, both shifted ±d.
-      const pts = [prim.a, prim.b].flatMap((q) => [add(q, d, -1), add(q, d, 1)]);
-      const [a, b] = extremes(pts, d);
-      return { kind: "capsule", a, b, r: prim.r };
-    }
-    return { kind: "poly", points: hull(prim.points.flatMap((q) => [add(q, d, -1), add(q, d, 1)])) };
-  });
+  return base.map((prim) => sweepAlong(prim, d));
+}
+
+function sweepAlong(prim: Primitive, d: Vec2): Primitive {
+  if (prim.kind === "capsule") {
+    // Capsule swept along ±d: hull of its two end discs, both shifted.
+    const pts = [prim.a, prim.b].flatMap((q) => [add(q, d, -1), add(q, d, 1)]);
+    const [a, b] = extremes(pts, d);
+    return { kind: "capsule", a, b, r: prim.r };
+  }
+  return { kind: "poly", points: hull(prim.points.flatMap((q) => [add(q, d, -1), add(q, d, 1)])) };
+}
+
+function shiftPrim(prim: Primitive, d: Vec2): Primitive {
+  return prim.kind === "capsule" ? { ...prim, a: add(prim.a, d, 1), b: add(prim.b, d, 1) } : { kind: "poly", points: prim.points.map((p) => add(p, d, 1)) };
+}
+
+function rotatePrim(prim: Primitive, pivot: Vec2, angle: number): Primitive {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const rot = (p: Vec2): Vec2 => ({ x: pivot.x + (p.x - pivot.x) * c - (p.y - pivot.y) * s, y: pivot.y + (p.x - pivot.x) * s + (p.y - pivot.y) * c });
+  return prim.kind === "capsule" ? { ...prim, a: rot(prim.a), b: rot(prim.b) } : { kind: "poly", points: prim.points.map(rot) };
 }
 
 function toPrimitives(shape: ShapeSpec): Primitive[] {

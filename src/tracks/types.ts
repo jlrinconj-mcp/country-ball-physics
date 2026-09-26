@@ -14,6 +14,12 @@ export const MODULE_KINDS = [
   "platforms",
   "bottleneck",
   "wheel",
+  "hammers",
+  "crushers",
+  "trapdoors",
+  "tumbler",
+  "bowl",
+  "hurdles",
   "final-drop",
   "finish",
 ] as const;

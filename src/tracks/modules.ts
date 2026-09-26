@@ -383,6 +383,261 @@ const wheel: TrackModuleDefinition = {
   },
 };
 
+// ── Obstacle modules (inspired by marble-race staples: pendulum hammers,
+// crushers, trapdoors, tumbling drums, funnel-endurance bowls, hurdles) ──
+
+/** Switchback ramps shared by Hammers and Hurdles: ramp i starts at a wall. */
+function switchbacks(ctx: ModuleContext, n: number, spacing: number, slope: number, reach: number, top: number) {
+  const { left, right, random } = ctx;
+  let side = random.sign();
+  return Array.from({ length: n }, (_, i) => {
+    const y0 = ctx.y + top + i * spacing;
+    const wallX = side < 0 ? left - 10 : right + 10;
+    const dir = -side;
+    const run = (right - left) * reach;
+    const ramp = { from: { x: wallX, y: y0 }, to: { x: wallX + dir * run * Math.cos(slope), y: y0 + run * Math.sin(slope) }, dir, wallX, y0 };
+    side = side < 0 ? 1 : -1;
+    return ramp;
+  });
+}
+
+/** Height of a ramp's top surface at x. */
+function rampY(ramp: { from: Vec2; to: Vec2 }, x: number): number {
+  const t = (x - ramp.from.x) / (ramp.to.x - ramp.from.x);
+  return ramp.from.y + (ramp.to.y - ramp.from.y) * t - 11;
+}
+
+const hammers: TrackModuleDefinition = {
+  kind: "hammers",
+  label: "Hammers",
+  weight: 2,
+  build(ctx) {
+    const { random, ballRadius: r } = ctx;
+    const arm = 250;
+    const head = Math.max(26, 1.2 * r);
+    // A single rolling ball fits under the lowest swing point: the hammer
+    // bats bouncing balls and breaks up piles instead of walling the ramp.
+    const clearance = 2.3 * r;
+    const spacing = arm + head + clearance + 3 * r + 150;
+    const ramps = switchbacks(ctx, 2, spacing, 0.24, 0.8, arm + head + clearance + 60);
+    const obstacles: ObstacleSpec[] = [];
+    const route: Vec2[] = [{ x: (ctx.left + ctx.right) / 2, y: ctx.y }];
+    ramps.forEach((ramp, i) => {
+      obstacles.push(solid(`${ctx.id}-ramp-${i}`, "ramp", [bar(ramp.from, ramp.to, 22)], { friction: 0.01 }));
+      const px = ramp.wallX + ramp.dir * (ctx.right - ctx.left) * random.float(0.4, 0.55);
+      const pivot = { x: px, y: rampY(ramp, px) - clearance - head - arm };
+      obstacles.push(
+        solid(`${ctx.id}-hammer-${i}`, "hammer", [
+          { kind: "circle", x: pivot.x, y: pivot.y, r: 12 },
+          { kind: "rect", x: pivot.x, y: pivot.y + arm / 2, w: 14, h: arm },
+          { kind: "circle", x: pivot.x, y: pivot.y + arm, r: head },
+        ], {
+          motion: { type: "swing", pivot, amplitude: random.float(0.8, 0.95), period: random.float(2.3, 3), phase: random.float(0, Math.PI * 2) },
+          restitution: 0.7,
+        }),
+      );
+      route.push({ x: ramp.to.x, y: ramp.to.y - r });
+    });
+    const last = ramps[ramps.length - 1] as (typeof ramps)[number];
+    return { height: last.to.y - ctx.y + 200, obstacles, route };
+  },
+};
+
+const crushers: TrackModuleDefinition = {
+  kind: "crushers",
+  label: "Crushers",
+  weight: 2,
+  build(ctx) {
+    const { left, right, random, ballRadius: r } = ctx;
+    const cx = (left + right) / 2;
+    const levels = 3;
+    const bh = 40;
+    // Even fully out, the two jaws leave a ball and a half of room: they
+    // shove and fling, never squeeze.
+    const gap = 3 * r;
+    const stub = 60;
+    const reach = (right - left) / 2 - gap / 2 - stub;
+    const spacing = bh + 2 * r * 2.6 + 70;
+    const period = random.float(2.4, 3.2);
+    const obstacles: ObstacleSpec[] = [];
+    for (let k = 0; k < levels; k++) {
+      const cy = ctx.y + 90 + k * spacing;
+      for (const side of [-1, 1] as const) {
+        const wall = side < 0 ? left : right;
+        const inner = wall - side * stub;
+        // A ram: flat underside, top sloping toward the middle so nothing rests
+        // on it, long enough to stay in the wall at full stroke (no gap behind
+        // it for a ball to fall into and get crushed against the wall).
+        const shape: ShapeSpec = {
+          kind: "polygon",
+          points:
+            side < 0
+              ? [{ x: wall - 40 - reach, y: cy - bh / 2 - 26 }, { x: inner, y: cy - bh / 2 }, { x: inner, y: cy + bh / 2 }, { x: wall - 40 - reach, y: cy + bh / 2 }]
+              : [{ x: wall + 40 + reach, y: cy - bh / 2 - 26 }, { x: wall + 40 + reach, y: cy + bh / 2 }, { x: inner, y: cy + bh / 2 }, { x: inner, y: cy - bh / 2 }],
+        };
+        obstacles.push(
+          solid(`${ctx.id}-crusher-${k}-${side < 0 ? "l" : "r"}`, "piston", [shape], {
+            motion: { type: "cycle", offset: { x: -side * reach, y: 0 }, period, out: 0.28, hold: 0.18, back: 0.34, phase: (k * 0.37 + (side < 0 ? 0 : 0.5)) % 1 },
+            restitution: 0.5,
+          }),
+        );
+      }
+      if (k < levels - 1) {
+        // Centre peg between levels closes the lane between the jaws.
+        const pr = Math.max(12, 0.7 * r);
+        obstacles.push(solid(`${ctx.id}-peg-${k}`, "peg", [{ kind: "circle", x: cx, y: cy + spacing / 2, r: pr }], { restitution: 0.6 }));
+      }
+    }
+    return { height: 90 + (levels - 1) * spacing + 170, obstacles };
+  },
+};
+
+const trapdoors: TrackModuleDefinition = {
+  kind: "trapdoors",
+  label: "Trapdoors",
+  weight: 2,
+  build(ctx) {
+    const { left, right, random, ballRadius: r } = ctx;
+    const cx = (left + right) / 2;
+    const post = 20;
+    // Two quadrants a side of a centre post; each has a hinged flap that
+    // swings from flat (closed) to hanging (open), launching whatever sits on
+    // its tip as it closes.
+    const quarter = ((right - left) / 2 - post / 2) / 2;
+    const flap = quarter - 3;
+    const levels = 2;
+    const spacing = flap + 3 * r + 70;
+    const period = random.float(2.6, 3.6);
+    const obstacles: ObstacleSpec[] = [];
+    for (let k = 0; k < levels; k++) {
+      const hy = ctx.y + 80 + k * spacing;
+      // Hinges: outer wall, post, post, outer wall; flaps point inward.
+      const hinges: { x: number; dir: 1 | -1 }[] = [
+        { x: left, dir: 1 },
+        { x: cx - post / 2, dir: -1 },
+        { x: cx + post / 2, dir: 1 },
+        { x: right, dir: -1 },
+      ];
+      hinges.forEach((h, i) => {
+        const base = h.dir > 0 ? Math.PI / 4 : (3 * Math.PI) / 4;
+        const c = { x: h.x + (Math.cos(base) * flap) / 2, y: hy + (Math.sin(base) * flap) / 2 };
+        // Closed (flat) when the swing is at -π/4 (dir +1) or +π/4 (dir −1).
+        const phase = (h.dir > 0 ? -Math.PI / 2 : Math.PI / 2) + random.float(-0.5, 0.5) + k * 1.3;
+        obstacles.push(
+          solid(`${ctx.id}-flap-${k}-${i}`, "trapdoor", [{ kind: "rect", x: c.x, y: c.y, w: flap, h: 16, angle: base }], {
+            motion: { type: "swing", pivot: { x: h.x, y: hy }, amplitude: Math.PI / 4, period, phase },
+            restitution: 0.4,
+          }),
+        );
+      });
+      obstacles.push(solid(`${ctx.id}-post-${k}`, "wall", [{ kind: "rect", x: cx, y: hy + spacing / 2 - 20, w: post, h: spacing - 40 }]));
+    }
+    return { height: 80 + (levels - 1) * spacing + flap + 3 * r + 60, obstacles };
+  },
+};
+
+/** A rotating ring with `openings` evenly spaced gaps (drums, tumblers). */
+function drum(id: string, centre: Vec2, radius: number, thickness: number, gap: number, openings: number, speed: number, phase: number): ObstacleSpec {
+  const step = (Math.PI * 2) / openings;
+  const shapes: ShapeSpec[] = Array.from({ length: openings }, (_, i) => ({
+    kind: "arc" as const,
+    x: centre.x,
+    y: centre.y,
+    radius,
+    thickness,
+    start: -Math.PI / 2 + i * step + gap / 2,
+    end: -Math.PI / 2 + (i + 1) * step - gap / 2,
+    resolution: 96,
+  }));
+  return solid(id, "ring", shapes, { motion: { type: "rotate", speed, pivot: centre, phase }, restitution: 0.5 });
+}
+
+const tumbler: TrackModuleDefinition = {
+  kind: "tumbler",
+  label: "Tumbler",
+  weight: 1,
+  build(ctx) {
+    const { left, right, random, ballRadius: r } = ctx;
+    const cx = (left + right) / 2;
+    const width = right - left;
+    const th = 18;
+    const radius = Math.min(300, width / 2 - 4 * r - 40);
+    const outer = radius + th;
+    // The funnel drops everyone onto the drum. Its lips stop a ball and a
+    // bit above it (nothing gets pinched against the spinning rim): balls
+    // either tumble in through an opening or get spun off the shoulders.
+    const lip = radius * 0.6;
+    const tipY = ctx.y + 40 + Math.max(160, (width / 2 - lip) * 0.55);
+    const cy = tipY + 2.8 * r + Math.sqrt(outer * outer - lip * lip);
+    const gap = Math.min(0.9, (4.2 * r) / radius);
+    return {
+      height: cy - ctx.y + outer + 4 * r + 60,
+      obstacles: [
+        solid(`${ctx.id}-l`, "funnel", [bar({ x: left - 10, y: ctx.y + 40 }, { x: cx - lip, y: tipY }, 22)], { friction: 0.01 }),
+        solid(`${ctx.id}-r`, "funnel", [bar({ x: right + 10, y: ctx.y + 40 }, { x: cx + lip, y: tipY }, 22)], { friction: 0.01 }),
+        drum(`${ctx.id}-drum`, { x: cx, y: cy }, radius, th, gap, 3, random.float(1.3, 1.8) * random.sign(), random.float(0, Math.PI * 2)),
+      ],
+    };
+  },
+};
+
+const bowl: TrackModuleDefinition = {
+  kind: "bowl",
+  label: "Bowl",
+  weight: 1,
+  build(ctx) {
+    const { left, right, ballRadius: r } = ctx;
+    const cx = (left + right) / 2;
+    const th = 18;
+    const radius = (right - left) / 2 - 2;
+    const cy = ctx.y + 90;
+    // Funnel endurance in 2D: balls swing across a U until they're slow enough
+    // to drop through the hole at the bottom.
+    const hole = (5 * r) / radius;
+    const pegR = Math.max(12, 1.05 * r);
+    const pegY = cy + radius - 2.4 * r - pegR;
+    const arc = (start: number, end: number): ShapeSpec => ({ kind: "arc", x: cx, y: cy, radius, thickness: th, start, end, resolution: 160 });
+    return {
+      height: cy - ctx.y + radius + th + 4 * r + 60,
+      obstacles: [
+        solid(`${ctx.id}-bowl-l`, "funnel", [arc(Math.PI / 2 + hole / 2, Math.PI - 0.02)], { friction: 0.005, restitution: 0.3 }),
+        solid(`${ctx.id}-bowl-r`, "funnel", [arc(0.02, Math.PI / 2 - hole / 2)], { friction: 0.005, restitution: 0.3 }),
+        solid(`${ctx.id}-peg`, "peg", [{ kind: "circle", x: cx, y: pegY, r: pegR }], { restitution: 0.6 }),
+      ],
+    };
+  },
+};
+
+const hurdles: TrackModuleDefinition = {
+  kind: "hurdles",
+  label: "Hurdles",
+  weight: 2,
+  build(ctx) {
+    const { random, ballRadius: r } = ctx;
+    const ramps = switchbacks(ctx, 2, 300 + 2 * r, 0.34, 0.78, 80);
+    const obstacles: ObstacleSpec[] = [];
+    const route: Vec2[] = [{ x: (ctx.left + ctx.right) / 2, y: ctx.y }];
+    ramps.forEach((ramp, i) => {
+      obstacles.push(solid(`${ctx.id}-ramp-${i}`, "ramp", [bar(ramp.from, ramp.to, 22)], { friction: 0.01 }));
+      // Humps along the ramp: balls hop them, the unlucky ones bounce back.
+      const count = random.int(2, 3);
+      for (let h = 0; h < count; h++) {
+        const t = 0.3 + (0.55 * (h + random.float(0.2, 0.8))) / count;
+        const x = ramp.from.x + (ramp.to.x - ramp.from.x) * t;
+        const y = rampY(ramp, x);
+        const w = 3 * r;
+        const hgt = Math.max(8, 0.4 * r);
+        obstacles.push(
+          solid(`${ctx.id}-hurdle-${i}-${h}`, "bumper", [{ kind: "polygon", points: [{ x: x - w / 2, y: y + 4 }, { x, y: y - hgt }, { x: x + w / 2, y: y + 4 }] }], { restitution: 0.5 }),
+        );
+      }
+      route.push({ x: ramp.to.x, y: ramp.to.y - r });
+    });
+    const last = ramps[ramps.length - 1] as (typeof ramps)[number];
+    return { height: last.to.y - ctx.y + 200, obstacles, route };
+  },
+};
+
 const finalDrop: TrackModuleDefinition = {
   kind: "final-drop",
   label: "Final Drop",
@@ -425,6 +680,12 @@ export const TRACK_MODULES: Record<ModuleKind, TrackModuleDefinition> = {
   platforms,
   bottleneck,
   wheel,
+  hammers,
+  crushers,
+  trapdoors,
+  tumbler,
+  bowl,
+  hurdles,
   "final-drop": finalDrop,
   finish,
 };

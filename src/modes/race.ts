@@ -71,8 +71,9 @@ export function createRaceMode(options: {
     createLayout({ scenario, random, count, ballRadius, track: custom, map: mapId }) {
       const s = scenarioById(scenario);
       const sequence = custom?.sequence.filter(isMiddleModule);
+      // Arenas (rings) are for Last Place Elimination; races need a track.
       const map = findMap(mapId);
-      if (map && !sequence?.length) return trackLayout(buildMap(map, random.seed, { ballRadius, count }));
+      if (map && !map.arena && !sequence?.length) return trackLayout(buildMap(map, random.seed, { ballRadius, count }));
       const track = generateTrack(random.seed, {
         length: s.length,
         pool: s.pool,
@@ -196,7 +197,7 @@ export function previewSequence(scenarios: RaceScenario[], scenarioId: string, s
   const s = scenarios.find((x) => x.id === scenarioId) ?? scenarios[0];
   const layoutSeed = createRandom(seed).fork("layout").seed;
   const map = findMap(mapId);
-  if (map) return buildMap(map, layoutSeed, { ballRadius: 20, count: 1 }).modules.map((m) => m.kind).filter(isMiddleModule);
+  if (map && !map.arena) return buildMap(map, layoutSeed, { ballRadius: 20, count: 1 }).modules.map((m) => m.kind).filter(isMiddleModule);
   if (!s) return [];
   return generateTrack(layoutSeed, { length: s.length, pool: s.pool, ballRadius: 20, count: 1 })
     .modules.map((m) => m.kind)

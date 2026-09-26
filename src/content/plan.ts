@@ -72,8 +72,9 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
   const { codes, label } = resolveCountries(request, countries, random.fork("selection"));
 
   if (request.map) {
-    getMap(request.map);
+    const map = getMap(request.map);
     if (mode !== "race" && mode !== "marble-race" && mode !== "last-place-elimination") throw new Error(`Maps apply to race modes and last-place-elimination, not ${mode}`);
+    if (map.arena && mode !== "last-place-elimination") throw new Error(`"${map.id}" is an arena: only last-place-elimination plays it`);
   }
   const scenario =
     request.map && mode === "last-place-elimination"

@@ -7,16 +7,17 @@ import { autoRadius, createChaos, eliminateKeepingOne, rankSurvival, ringObstacl
 
 const WIDTH = 1080;
 const HEIGHT = 1920;
-const CENTER = { x: WIDTH / 2, y: 900 };
+export const RING_CENTER = { x: WIDTH / 2, y: 900 };
+const CENTER = RING_CENTER;
 const DEG = Math.PI / 180;
 
-interface RingPlan extends RingOptions {
+export interface RingPlan extends RingOptions {
   /** Gap grows to this over time (radians). */
   maxGap: number;
 }
 
 /** Seeded variation: each seed spins the rings differently. */
-function ringsFor(scenario: string, ballRadius: number, random: Random): RingPlan[] {
+export function ringsFor(scenario: string, ballRadius: number, random: Random): RingPlan[] {
   const direction = random.sign();
   return baseRings(scenario, ballRadius).map((ring) => ({
     ...ring,

@@ -6,7 +6,7 @@ import type { CameraMode } from "@/engine/simulation";
 import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
 import { getMode, listModes, modeDefaults } from "@/modes";
 import { TOURNAMENT_SIZES, type TournamentSize } from "@/modes/tournament";
-import { findMap, listMaps } from "@/tracks/maps";
+import { findMap, listTrackMaps } from "@/tracks/maps";
 import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
@@ -112,7 +112,7 @@ export function ControlPanel({
             <Select
               label="Map"
               value={config.map ?? ""}
-              options={[{ value: "", label: "Procedural (scenario)" }, ...listMaps().map((m) => ({ value: m.id, label: m.label }))]}
+              options={[{ value: "", label: "Procedural (scenario)" }, ...listTrackMaps().map((m) => ({ value: m.id, label: m.label }))]}
               onChange={(id) => onConfig({ ...config, map: id || undefined, track: undefined })}
             />
             {findMap(config.map) && <p className="text-xs text-zinc-500">{findMap(config.map)?.description}</p>}

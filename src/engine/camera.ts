@@ -88,6 +88,7 @@ export class Camera {
   private keepLeaderInFrame(sim: Simulation, alpha: number, dt: number): void {
     const mode = this.options.mode;
     if (mode !== "follow-leader" && mode !== "follow-action") return;
+    if (sim.rules.cameraFixed?.()) return;
     // Modes that pick their own subjects keep the first one in shot.
     const leader = sim.rules.cameraSubjects ? (sim.rules.cameraSubjects()[0] ?? null) : sim.leader?.active ? sim.leader : null;
     if (!leader?.active) return;
@@ -149,7 +150,7 @@ export class Camera {
     const mode = this.options.mode;
 
     const centreOfFocus = { x: focus.x + focus.w / 2, y: focus.y + focus.h / 2, zoom: fitAll };
-    if (mode === "fixed") return centreOfFocus;
+    if (mode === "fixed" || sim.rules.cameraFixed?.()) return centreOfFocus;
 
     const balls = sim.balls.filter((b) => b.active);
     const chosen = sim.rules.cameraSubjects?.();

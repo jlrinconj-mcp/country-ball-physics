@@ -3,19 +3,37 @@ import { DEFAULT_CONFIG } from "@/engine/defaults";
 import { makeTestCountries } from "@/engine/testing";
 import { createSimulation, modeDefaults } from "@/modes";
 import { CoursePath } from "./coursePath";
-import { buildMap, getMap, listMaps } from "./maps";
+import { buildMap, getMap, listMaps, listTrackMaps } from "./maps";
 
 describe("map registry", () => {
-  it.each(listMaps().map((m) => m.id))("%s builds the same track for a seed", (id) => {
+  it.each(listTrackMaps().map((m) => m.id))("%s builds the same track for a seed", (id) => {
     const map = getMap(id);
     const a = buildMap(map, "map-seed", { ballRadius: 20, count: 32 });
     const b = buildMap(map, "map-seed", { ballRadius: 20, count: 32 });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     const middle = a.modules.map((m) => m.kind).slice(1, -2);
     if (map.sequence) expect(middle).toEqual(map.sequence);
+    else if (map.slots) middle.forEach((k, i) => expect(map.slots?.[i]).toContain(k));
     else expect(middle.every((k) => map.pool?.includes(k))).toBe(true);
-    expect(map.pace[0]).toBeGreaterThanOrEqual(7);
-    expect(map.pace[1]).toBeLessThanOrEqual(15);
+  });
+
+  it("keeps every map's measured pace inside the 8–15 s target (p10 ≥ 7.5)", () => {
+    for (const map of listMaps()) {
+      expect(map.pace[0]).toBeGreaterThanOrEqual(7.5);
+      expect(map.pace[1]).toBeLessThanOrEqual(15);
+    }
+  });
+
+  it("varies the obstacle-mix picks with the seed", () => {
+    const map = getMap("obstacle-mix");
+    const picks = new Set(["a", "b", "c", "d", "e", "f"].map((seed) => buildMap(map, seed, { ballRadius: 20, count: 8 }).modules[1]?.kind));
+    expect(picks.size).toBeGreaterThan(1);
+  });
+
+  it("arenas are not tracks", () => {
+    const arenas = listMaps().filter((m) => m.arena);
+    expect(arenas.map((m) => m.id)).toEqual(["ring", "double-ring", "triple-ring"]);
+    expect(() => buildMap(arenas[0]!, "x", { ballRadius: 20, count: 8 })).toThrow(/arena/);
   });
 
   it("rejects unknown maps", () => {
