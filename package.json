@@ -16,6 +16,8 @@
     "test:watch": "vitest",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "probe": "tsx scripts/probe.ts",
+    "maps": "tsx scripts/maps.ts",
+    "corridors": "tsx scripts/corridors.ts",
     "render:frames": "tsx scripts/render-frames.ts",
     "generate": "tsx scripts/generate.ts",
     "tournament": "tsx scripts/tournament.ts"

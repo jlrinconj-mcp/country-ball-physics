@@ -33,6 +33,11 @@ export class CountryBall {
   ghost: BallGhost | null = null;
   /** Mode-specific scratch data (lap, checkpoint, round…). */
   progress = 0;
+  /**
+   * Still in the game but out of the world for now (e.g. crossed the line
+   * this round and waits for the next one). Parked balls have no body.
+   */
+  parked = false;
 
   constructor(
     /** Spawn order; also the deterministic tie-breaker. */
@@ -47,6 +52,11 @@ export class CountryBall {
 
   get alive(): boolean {
     return this.status === "alive";
+  }
+
+  /** Alive and physically in the world (not parked). */
+  get active(): boolean {
+    return this.status === "alive" && !this.parked;
   }
 
   get code(): string {

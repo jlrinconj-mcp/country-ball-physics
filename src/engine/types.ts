@@ -109,9 +109,11 @@ export interface WorldLayout {
   gateOpensAt?: number;
   /** Track layouts: the modules it was built from (for HUD, debugging, editor). */
   modules?: { kind: string; y: number; height: number }[];
+  /** Track layouts: the route balls follow from gate to finish (progress). */
+  path?: Vec2[];
 }
 
-export type ModeId = "last-country-standing" | "race" | "elimination-drop" | "marble-race";
+export type ModeId = "last-country-standing" | "race" | "elimination-drop" | "marble-race" | "last-place-elimination";
 
 export interface PhysicsSettings {
   /** Gravity multiplier; 1 ≈ Matter.js default. */
@@ -153,4 +155,9 @@ export interface SimulationConfig {
    * order. Geometry inside each module is still generated from the seed.
    */
   track?: { sequence: string[]; difficulty?: number };
+  /**
+   * Named map from the map registry (race modes). Replaces the scenario's
+   * procedural recipe; a custom `track` still wins over it.
+   */
+  map?: string;
 }

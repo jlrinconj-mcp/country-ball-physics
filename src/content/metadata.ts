@@ -31,6 +31,7 @@ const TITLES: Record<Language, Templates> = {
     race: ["{label} Country Race", "Which Country Wins the Race? {label}", "{n}-Country Race to the Finish"],
     "marble-race": ["{label} Marble Race", "{n} Countries Marble Race", "Marble Race: {label}"],
     "elimination-drop": ["{label} Elimination", "Plinko Elimination: {label}", "Which Country Survives the Drop?"],
+    "last-place-elimination": ["{n} Countries: Last Place Is Eliminated", "Last Place Is Out: {label}", "{label}: Don't Finish Last"],
     tournament: ["{label} Tournament", "{n}-Country Tournament: Who Takes the Cup?", "World Cup of Physics: {label}"],
   },
   es: {
@@ -38,6 +39,7 @@ const TITLES: Record<Language, Templates> = {
     race: ["Carrera de países: {label}", "¿Qué país gana la carrera? {label}", "Carrera de {n} países"],
     "marble-race": ["Carrera de canicas: {label}", "{n} países en carrera de canicas", "Marble race: {label}"],
     "elimination-drop": ["Eliminación: {label}", "Plinko de eliminación: {label}", "¿Qué país sobrevive a la caída?"],
+    "last-place-elimination": ["{n} países: el último queda eliminado", "El último sale: {label}", "{label}: no llegues último"],
     tournament: ["Torneo: {label}", "Torneo de {n} países: ¿quién gana la copa?", "Mundial de física: {label}"],
   },
 };
@@ -52,6 +54,7 @@ const MODE_TAGS: Record<ModeId | "tournament", string[]> = {
   race: ["countryrace", "race"],
   "marble-race": ["marblerace", "marbles"],
   "elimination-drop": ["plinko", "elimination"],
+  "last-place-elimination": ["lastplace", "elimination"],
   tournament: ["tournament", "worldcup"],
 };
 

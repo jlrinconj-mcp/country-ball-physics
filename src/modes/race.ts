@@ -1,15 +1,16 @@
 import type { CountryBall } from "@/entities/CountryBall";
-import { TICK_RATE } from "@/engine/physicsWorld";
+import { TICK_DT, TICK_RATE } from "@/engine/physicsWorld";
 import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
 import type { WorldLayout } from "@/engine/types";
 import { createRandom } from "@/engine/random";
 import { generateTrack } from "@/tracks/generator";
+import { buildMap, findMap } from "@/tracks/maps";
 import { MIDDLE_MODULES, type ModuleKind, type TrackDefinition } from "@/tracks/types";
 
 function isMiddleModule(kind: string): kind is ModuleKind {
   return (MIDDLE_MODULES as readonly string[]).includes(kind);
 }
-import { autoRadius } from "./shared";
+import { autoRadius, startGate } from "./shared";
 
 export interface RaceScenario {
   id: string;
@@ -36,6 +37,7 @@ export function trackLayout(track: TrackDefinition): WorldLayout {
     finishY: track.finishY,
     gateOpensAt: track.gateOpensAt,
     modules: track.modules,
+    path: track.path,
   };
 }
 
@@ -66,9 +68,11 @@ export function createRaceMode(options: {
       return autoRadius(1000 * 420, count, 0.3, 11, options.maxRadius ?? 32);
     },
 
-    createLayout({ scenario, random, count, ballRadius, track: custom }) {
+    createLayout({ scenario, random, count, ballRadius, track: custom, map: mapId }) {
       const s = scenarioById(scenario);
       const sequence = custom?.sequence.filter(isMiddleModule);
+      const map = findMap(mapId);
+      if (map && !sequence?.length) return trackLayout(buildMap(map, random.seed, { ballRadius, count }));
       const track = generateTrack(random.seed, {
         length: s.length,
         pool: s.pool,
@@ -96,11 +100,17 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
   const stalled = new Map<number, number>();
   const gateTick = Math.round(gateOpensAt * TICK_RATE);
   let firstFinishTick: number | null = null;
+  const gate = startGate(sim);
 
   const progress = (b: CountryBall) =>
     b.status === "finished" ? 1e7 - (b.place ?? 0) : b.status === "eliminated" ? -1e7 + (b.eliminatedTick ?? 0) : b.y;
 
   const rules: ModeRules = {
+    beforeStep() {
+      if (sim.time + TICK_DT >= gateOpensAt) gate.open(gateOpensAt);
+      gate.update();
+    },
+
     afterStep() {
       for (const ball of sim.balls) {
         if (!ball.alive) continue;
@@ -181,11 +191,13 @@ export const race = createRaceMode({
   scenarios: RACE_SCENARIOS,
 });
 
-/** The module sequence a seed would generate for a scenario (editor preview). */
-export function previewSequence(scenarios: RaceScenario[], scenarioId: string, seed: string): ModuleKind[] {
+/** The module sequence a seed would generate for a scenario or map (editor preview). */
+export function previewSequence(scenarios: RaceScenario[], scenarioId: string, seed: string, mapId?: string): ModuleKind[] {
   const s = scenarios.find((x) => x.id === scenarioId) ?? scenarios[0];
-  if (!s) return [];
   const layoutSeed = createRandom(seed).fork("layout").seed;
+  const map = findMap(mapId);
+  if (map) return buildMap(map, layoutSeed, { ballRadius: 20, count: 1 }).modules.map((m) => m.kind).filter(isMiddleModule);
+  if (!s) return [];
   return generateTrack(layoutSeed, { length: s.length, pool: s.pool, ballRadius: 20, count: 1 })
     .modules.map((m) => m.kind)
     .filter(isMiddleModule);

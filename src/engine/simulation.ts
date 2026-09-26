@@ -28,6 +28,12 @@ export interface ModeHud {
   status?: string;
   /** Big centred text (countdowns, "GO!", "ROUND 2"). */
   banner?: string;
+  /** Centred title card, e.g. "32 COUNTRIES" over "LAST PLACE IS ELIMINATED". */
+  title?: { text: string; sub?: string };
+  /** One ball called out under the counter instead of the leader. */
+  featured?: { label: string; ball: CountryBall; tone: "accent" | "danger" };
+  /** Balls already out, most recent first (drawn as a strip of flags). */
+  eliminated?: CountryBall[];
 }
 
 /** A game mode: builds a world and supplies the rules that run each tick. */
@@ -55,6 +61,8 @@ export interface LayoutContext {
   ballRadius: number;
   /** Custom track, if the config has one (race modes). */
   track?: SimulationConfig["track"];
+  /** Map from the registry, if the config names one. */
+  map?: string;
 }
 
 export interface ModeRules {
@@ -68,6 +76,12 @@ export interface ModeRules {
   progress?(ball: CountryBall): number;
   /** Whether a leader makes sense yet (e.g. not before the start gate opens). */
   leaderActive?(): boolean;
+  /**
+   * Balls the follow cameras frame instead of their default subject (leader,
+   * pack, group); the first one is always kept in shot. An empty list holds
+   * the current shot.
+   */
+  cameraSubjects?(): CountryBall[];
   hud(): ModeHud;
   /** maxDuration reached: the mode must declare a winner. */
   onTimeout(): void;
@@ -86,6 +100,8 @@ export interface SimulationEvents {
   impact: { x: number; y: number; intensity: number; kind: "ball" | "wall" | "bumper" };
   obstacleChanged: { id: string; tick: number };
   roundStarted: { round: number; remaining: number; tick: number };
+  /** A ball left the world without being decided (e.g. safe this round). */
+  countryParked: { ball: CountryBall; tick: number };
 }
 
 export type DecidedBy = "physics" | "timeout";
@@ -153,6 +169,8 @@ export class Simulation {
   decidedBy: DecidedBy = "physics";
   leader: CountryBall | null = null;
   result: SimulationResult | null = null;
+  /** Bumped by rules when the scene jumps (new round): cameras cut instead of panning. */
+  cameraCut = 0;
   readonly timeline: TimelineEntry[] = [];
 
   private readonly bodyOwners = new Map<number, CountryBall | Obstacle>();
@@ -186,6 +204,7 @@ export class Simulation {
       count,
       ballRadius: this.ballRadius,
       track: config.track,
+      map: config.map,
     });
 
     for (const spec of this.layout.obstacles) this.addObstacle(spec);
@@ -207,6 +226,11 @@ export class Simulation {
     let n = 0;
     for (const b of this.balls) if (b.alive) n++;
     return n;
+  }
+
+  /** Alive balls that are in the world (not parked). */
+  get activeBalls(): CountryBall[] {
+    return this.balls.filter((b) => b.active);
   }
 
   get maxTicks(): number {
@@ -358,6 +382,35 @@ export class Simulation {
     obstacle.syncFromBody();
     obstacle.savePrevious();
     this.events.emit("obstacleChanged", { id: obstacle.id, tick: this.tick });
+  }
+
+  /**
+   * Take a live ball out of the world without deciding it: it keeps its
+   * status and place in the game, but has no body until `unpark`.
+   */
+  park(ball: CountryBall): void {
+    if (!ball.active) return;
+    ball.parked = true;
+    this.detachBody(ball, false);
+    this.events.emit("countryParked", { ball, tick: this.tick });
+  }
+
+  /** Put a parked ball back into the world at (x, y). */
+  unpark(ball: CountryBall, x: number, y: number, vx = 0, vy = 0): void {
+    if (!ball.alive || !ball.parked) return;
+    const settings = this.config.physics;
+    const body = this.physics.createBall(x, y, ball.radius, {
+      restitution: settings.restitution,
+      friction: settings.friction,
+      frictionAir: settings.frictionAir,
+    });
+    PhysicsWorld.setVelocity(body, { x: vx, y: vy });
+    ball.body = body;
+    ball.parked = false;
+    ball.ghost = null;
+    this.bodyOwners.set(body.id, ball);
+    ball.syncFromBody();
+    ball.savePrevious();
   }
 
   /** Apply an instantaneous velocity change to a live ball. */

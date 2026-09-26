@@ -210,7 +210,7 @@ export class CanvasRenderer {
 
     for (const ball of frame.sim.balls) {
       const ghost = ball.ghost;
-      if (!ball.alive && !ghost) continue;
+      if (!ball.active && !ghost) continue;
       const x = lerp(ball.prevX, ball.x, alpha);
       const y = lerp(ball.prevY, ball.y, alpha);
       const r = ball.radius;
@@ -231,7 +231,7 @@ export class CanvasRenderer {
     // Labels in a second pass so neighbouring balls never cover them.
     if (!showLabels) return;
     for (const ball of frame.sim.balls) {
-      if (!ball.alive) continue;
+      if (!ball.active) continue;
       const x = lerp(ball.prevX, ball.x, alpha);
       const y = lerp(ball.prevY, ball.y, alpha);
       if (x < view.x || x > view.x + view.w || y < view.y || y > view.y + view.h) continue;

@@ -1,6 +1,6 @@
 import { withDeterministicMath } from "@/engine/deterministicMath";
 import { createRandom } from "@/engine/random";
-import type { ObstacleSpec, ZoneSpec } from "@/engine/types";
+import type { ObstacleSpec, Vec2, ZoneSpec } from "@/engine/types";
 import { TRACK_MODULES } from "./modules";
 import type { ModuleKind, PlacedModule, TrackDefinition, TrackOptions } from "./types";
 
@@ -42,6 +42,8 @@ function buildTrack(seed: string, options: TrackOptions): TrackDefinition {
   const obstacles: ObstacleSpec[] = [];
   const zones: ZoneSpec[] = [];
   const modules: PlacedModule[] = [];
+  const path: Vec2[] = [];
+  const cx = width / 2;
   let y = 0;
   let spawn = { x: left, y: 40, w: right - left, h: 200 };
   let gateOpensAt = 0;
@@ -61,6 +63,7 @@ function buildTrack(seed: string, options: TrackOptions): TrackDefinition {
     zones.push(...(out.zones ?? []));
     if (out.spawn) spawn = out.spawn;
     if (out.gateOpensAt !== undefined) gateOpensAt = out.gateOpensAt;
+    if (kind !== "start") path.push(...(out.route ?? [{ x: cx, y }]));
     modules.push({ kind, y, height: out.height });
     y += out.height;
   });
@@ -75,6 +78,8 @@ function buildTrack(seed: string, options: TrackOptions): TrackDefinition {
 
   const finishZone = zones.find((z) => z.kind === "finish");
   const finishY = finishZone && finishZone.shape.kind === "rect" ? finishZone.shape.y : height;
+  path.unshift({ x: cx, y: spawn.y });
+  path.push({ x: cx, y: finishY });
   return {
     seed,
     width,
@@ -86,6 +91,7 @@ function buildTrack(seed: string, options: TrackOptions): TrackDefinition {
     startY: spawn.y + spawn.h,
     finishY,
     gateOpensAt,
+    path: path.filter((p) => p.y <= finishY),
   };
 }
 

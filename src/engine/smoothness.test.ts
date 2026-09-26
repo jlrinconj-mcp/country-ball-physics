@@ -140,3 +140,70 @@ describe("camera smoothness", () => {
     },
   );
 });
+
+describe("Last Place Elimination smoothness", () => {
+  const viewport = { width: 1080, height: 1920, content: { x: 60, y: 460, w: 850, h: 1020 } };
+  const maps = getMode("last-place-elimination").scenarios.map((s) => s.id);
+
+  it.each(maps)("%s: balls stay on the track and never teleport mid-round", (map) => {
+    const sim = createSimulation(config("last-place-elimination", map, "lpe-smooth"), countries);
+    const { bounds } = sim.layout;
+    let rounds = 0;
+    let cut = -1;
+    sim.events.on("roundStarted", ({ tick }) => {
+      rounds++;
+      cut = tick;
+    });
+    let maxStep = 0;
+    let escaped = 0;
+    while (sim.status !== "finished" && rounds <= 4) {
+      sim.step();
+      if (sim.tick <= cut + 1) continue;
+      for (const b of sim.balls) {
+        if (!b.active) continue;
+        maxStep = Math.max(maxStep, Math.hypot(b.x - b.prevX, b.y - b.prevY));
+        if (b.x < bounds.x || b.x > bounds.x + bounds.w || b.y < bounds.y - 100) escaped++;
+      }
+    }
+    sim.destroy();
+    expect(escaped).toBe(0);
+    expect(maxStep).toBeLessThanOrEqual(sim.config.physics.maxSpeed * 1.5);
+  });
+
+  it("the camera follows the fight for last place and cuts between rounds", () => {
+    const sim = createSimulation(config("last-place-elimination", "plinko", "lpe-camera"), countries);
+    const camera = new Camera();
+    camera.options = { mode: "follow-action", dynamicZoom: true };
+    camera.setViewport(viewport);
+    camera.snap(sim);
+    let cut = sim.cameraCut;
+    let maxJump = 0;
+    let frames = 0;
+    let lastVisible = 0;
+    let rounds = 0;
+    sim.events.on("roundStarted", () => rounds++);
+    while (sim.status !== "finished" && rounds <= 5) {
+      sim.step();
+      const before = camera.worldToScreen(0, 0);
+      camera.update(sim, 1, 1 / TICK_RATE);
+      const after = camera.worldToScreen(0, 0);
+      if (sim.cameraCut !== cut) {
+        // A new round: the camera cuts to the start instead of panning up.
+        cut = sim.cameraCut;
+        continue;
+      }
+      maxJump = Math.max(maxJump, Math.hypot(after.x - before.x, after.y - before.y));
+      const last = sim.rules.cameraSubjects?.()[0];
+      if (last && sim.rules.hud().featured?.ball === last) {
+        frames++;
+        const p = camera.worldToScreen(last.x, last.y);
+        if (p.x >= 0 && p.x <= viewport.width && p.y >= viewport.content.y && p.y <= viewport.content.y + viewport.content.h) lastVisible++;
+      }
+    }
+    sim.destroy();
+    expect(frames).toBeGreaterThan(100);
+    expect(maxJump).toBeLessThan(viewport.height * 0.08);
+    // The country in last place is in the content area almost all the time.
+    expect(lastVisible / frames).toBeGreaterThan(0.95);
+  });
+});

@@ -5,6 +5,7 @@ import { withDeterministicMath } from "@/engine/deterministicMath";
 import type { ModeId, SimulationConfig } from "@/engine/types";
 import { eliminationDrop } from "./eliminationDrop";
 import { lastCountryStanding } from "./lastCountryStanding";
+import { lastPlaceElimination } from "./lastPlaceElimination";
 import { marbleRace } from "./marbleRace";
 import { race } from "./race";
 
@@ -13,6 +14,7 @@ export const MODES: Partial<Record<ModeId, ModeDefinition>> = {
   race,
   "elimination-drop": eliminationDrop,
   "marble-race": marbleRace,
+  "last-place-elimination": lastPlaceElimination,
 };
 
 export function getMode(id: ModeId): ModeDefinition {

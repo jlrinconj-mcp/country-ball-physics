@@ -23,6 +23,15 @@ describe("planSimulation", () => {
     expect(() => planSimulation({ mode: "race", countries: "atlantis", seed: "s" }, real)).toThrow();
   });
 
+  it("runs a named map in any track mode", () => {
+    const lpe = planSimulation({ mode: "last-place-elimination", countries: "all", seed: "m", map: "zigzag" }, synthetic);
+    expect(lpe.config.scenario).toBe("zigzag");
+    expect(lpe.config.maxParticipants).toBe(40);
+    expect(planSimulation({ mode: "marble-race", countries: "all", seed: "m", map: "plinko" }, synthetic).config.map).toBe("plinko");
+    expect(() => planSimulation({ mode: "race", countries: "all", seed: "m", map: "atlantis" }, synthetic)).toThrow(/Unknown map/);
+    expect(() => planSimulation({ mode: "last-country-standing", countries: "all", seed: "m", map: "plinko" }, synthetic)).toThrow(/Maps apply/);
+  });
+
   it("applies mode defaults, format and tournaments", () => {
     const plan = planSimulation({ mode: "tournament", countries: "all", seed: "cup", format: "1:1", heatMode: "race" }, synthetic);
     expect(plan.config.tournament?.size).toBe(32);

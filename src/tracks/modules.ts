@@ -1,4 +1,5 @@
 import type { ObstacleSpec, ShapeSpec, Vec2 } from "@/engine/types";
+import { pegGrid, type PegGrid } from "./grid";
 import type { ModuleContext, ModuleKind, TrackModuleDefinition } from "./types";
 
 // ── Geometry helpers ─────────────────────────────────────────────────────
@@ -26,14 +27,32 @@ function passGap(ctx: ModuleContext): number {
   return ctx.ballRadius * 2 * 2.6;
 }
 
-/** Rejection-sample well-spaced points (seeded). */
-function scatter(ctx: ModuleContext, count: number, area: { x: number; y: number; w: number; h: number }, spacing: number): Vec2[] {
-  const points: Vec2[] = [];
-  for (let attempt = 0; attempt < count * 40 && points.length < count; attempt++) {
-    const p = { x: ctx.random.float(area.x, area.x + area.w), y: ctx.random.float(area.y, area.y + area.h) };
-    if (points.every((q) => Math.hypot(p.x - q.x, p.y - q.y) >= spacing)) points.push(p);
-  }
-  return points;
+/** Grid pegs as obstacles; `bumpers` (grid indices) become kicking bumpers. */
+function gridObstacles(ctx: ModuleContext, grid: PegGrid, options: { bumpers?: Set<number>; style?: "peg" | "bumper"; kick?: number } = {}): ObstacleSpec[] {
+  const r = ctx.ballRadius;
+  // A bumper may be bigger than a peg, but never closes the gap to a neighbour.
+  const bumperR = Math.max(grid.pegRadius, Math.min(Math.max(grid.pegRadius * 1.4, 24), grid.pitch - grid.pegRadius - 2 * r * 1.9));
+  return grid.pegs.map((p) => {
+    const bumper = options.style === "bumper" || (options.bumpers?.has(p.index) ?? false);
+    const radius = bumper && options.style !== "bumper" ? bumperR : grid.pegRadius;
+    return solid(`${ctx.id}-${bumper ? "bumper" : "peg"}-${p.index}`, bumper ? "bumper" : "peg", [{ kind: "circle", x: p.x, y: p.y, r: radius }], {
+      restitution: bumper ? 0.9 : 0.6,
+      kick: bumper ? (options.kick ?? 5 + ctx.difficulty * 3) : undefined,
+    });
+  });
+}
+
+/**
+ * Short ramps on both side walls that steer wall-huggers inward, so no ball
+ * slides past a spinner or wheel along the wall. `reach` is how far from the
+ * wall the ramp's tip ends.
+ */
+function wallDeflectors(ctx: ModuleContext, y: number, reach: number): ObstacleSpec[] {
+  const drop = reach * 0.55;
+  return [
+    solid(`${ctx.id}-deflect-l`, "ramp", [bar({ x: ctx.left - 10, y }, { x: ctx.left + reach, y: y + drop }, 18)], { friction: 0.01 }),
+    solid(`${ctx.id}-deflect-r`, "ramp", [bar({ x: ctx.right + 10, y }, { x: ctx.right - reach, y: y + drop }, 18)], { friction: 0.01 }),
+  ];
 }
 
 // ── Modules ──────────────────────────────────────────────────────────────
@@ -51,13 +70,11 @@ const start: TrackModuleDefinition = {
     const gateY = y + 40 + spawnH + 16;
     const half = width / 2;
     const gateOpensAt = 3;
+    // The mode opens (and may re-close) the gate: see `startGate` in modes/shared.
     const gate = (side: -1 | 1): ObstacleSpec =>
-      solid(
-        `${ctx.id}-gate-${side < 0 ? "l" : "r"}`,
-        "gate",
-        [{ kind: "rect", x: left + width / 2 + (side * half) / 2, y: gateY, w: half, h: 22 }],
-        { motion: { type: "slide", offset: { x: side * (half + 60), y: 0 }, start: gateOpensAt, duration: 0.45 } },
-      );
+      solid(`${ctx.id}-gate-${side < 0 ? "l" : "r"}`, "gate", [{ kind: "rect", x: left + width / 2 + (side * half) / 2, y: gateY, w: half, h: 22 }], {
+        motion: { type: "manual" },
+      });
     return {
       height: gateY - y + 90,
       obstacles: [gate(-1), gate(1)],
@@ -72,19 +89,12 @@ const drop: TrackModuleDefinition = {
   label: "Drop",
   weight: 1,
   build(ctx) {
-    const height = 520;
-    const pegR = ctx.random.float(11, 17);
-    const count = 5 + Math.round(ctx.difficulty * 4);
-    const pegs = scatter(
-      ctx,
-      count,
-      { x: ctx.left + 60, y: ctx.y + 90, w: ctx.right - ctx.left - 120, h: height - 180 },
-      passGap(ctx) + pegR * 2,
-    );
-    return {
-      height,
-      obstacles: pegs.map((p, i) => solid(`${ctx.id}-peg-${i}`, "peg", [{ kind: "circle", x: p.x, y: p.y, r: pegR }], { restitution: 0.7 })),
-    };
+    // A few rows of big, widely spaced pegs: quick, bouncy, no free lanes.
+    const rows = ctx.random.int(2, 3);
+    const grid = pegGrid({ left: ctx.left, right: ctx.right, top: ctx.y + 100, rows, ballRadius: ctx.ballRadius, pitch: 8.5, minPitch: 110, maxPitch: 280, minPegRadius: 16 });
+    const slots = grid.pegs.filter((p) => !p.wall).map((p) => p.index);
+    const bumpers = new Set(ctx.random.sample(slots, 1 + Math.round(ctx.difficulty)));
+    return { height: 100 + grid.span + 150, obstacles: gridObstacles(ctx, grid, { bumpers }) };
   },
 };
 
@@ -96,20 +106,24 @@ const zigzag: TrackModuleDefinition = {
     const { left, right, y, random } = ctx;
     const width = right - left;
     // Few, fairly steep ramps: balls visibly roll and drop instead of crawling.
-    const n = random.int(3, 4);
-    const spacing = 230 + ctx.ballRadius * 2;
+    // Every switchback stops the ball against the wall: easy tracks get three.
+    const n = ctx.difficulty < 0.5 ? 3 : random.int(3, 4);
+    const spacing = 250 + ctx.ballRadius * 2;
     const length = width * 0.68;
     let side = random.sign();
     const obstacles: ObstacleSpec[] = [];
+    const route: Vec2[] = [{ x: (left + right) / 2, y }];
     for (let i = 0; i < n; i++) {
-      const slope = random.float(0.24, 0.34);
+      const slope = random.float(0.3, 0.4);
       const top = y + 80 + i * spacing;
       const from = { x: side < 0 ? left - 10 : right + 10, y: top };
       const to = { x: from.x - side * length * Math.cos(slope), y: top + length * Math.sin(slope) };
       obstacles.push(solid(`${ctx.id}-ramp-${i}`, "ramp", [bar(from, to, 22)], { friction: 0.01 }));
+      // Balls roll along each ramp and drop off its low end.
+      route.push({ x: to.x, y: to.y - ctx.ballRadius });
       side = side < 0 ? 1 : -1;
     }
-    return { height: 80 + n * spacing + 140, obstacles };
+    return { height: 80 + n * spacing + 140, obstacles, route };
   },
 };
 
@@ -127,6 +141,14 @@ const spinner: TrackModuleDefinition = {
     const reach = pair ? width / 4 - gap * 0.55 : width / 2 - gap;
     const height = reach * 2 + 220;
     const direction = random.sign();
+    const r = ctx.ballRadius;
+    // Steer wall-huggers (and, for a pair, the middle lane) into the blades.
+    const sideLane = pivots[0]! - reach - left;
+    const extras: ObstacleSpec[] = wallDeflectors(ctx, y + 30, sideLane + 0.5 * r);
+    if (pair) {
+      const middleR = Math.max(14, (cx - (pivots[0]! + reach)) - 1.4 * r);
+      extras.push(solid(`${ctx.id}-splitter`, "peg", [{ kind: "circle", x: cx, y: y + 40 + middleR, r: middleR }], { restitution: 0.6 }));
+    }
     const obstacles = pivots.map((px, i) => {
       const pivot = { x: px, y: y + height / 2 };
       const cross = random.chance(0.4);
@@ -139,7 +161,7 @@ const spinner: TrackModuleDefinition = {
         restitution: 0.6,
       });
     });
-    return { height, obstacles };
+    return { height, obstacles: [...extras, ...obstacles] };
   },
 };
 
@@ -151,13 +173,17 @@ const funnel: TrackModuleDefinition = {
     const { left, right, y } = ctx;
     const width = right - left;
     const cx = (left + right) / 2;
-    const opening = Math.max(ctx.ballRadius * 2 * 3, width * 0.2);
-    const height = 580;
-    const neckY = y + height - 150;
+    const r = ctx.ballRadius;
+    const opening = Math.min(width * 0.2, Math.max(r * 6, 130));
+    const neckY = y + 430;
     const t = 24;
+    // A splitter under the neck: nothing drops straight through the funnel.
+    const splitR = Math.max(16, opening / 2 - 1.5 * r);
+    const splitY = neckY + 90 + 2.4 * r + splitR;
     return {
-      height,
+      height: splitY - y + splitR + 2.6 * r + 20,
       obstacles: [
+        solid(`${ctx.id}-split`, "bumper", [{ kind: "circle", x: cx, y: splitY, r: splitR }], { restitution: 0.8, kick: 3 }),
         solid(`${ctx.id}-l`, "funnel", [
           bar({ x: left - 10, y: y + 40 }, { x: cx - opening / 2 - t / 2, y: neckY }, t),
           { kind: "rect", x: cx - opening / 2 - t / 2, y: neckY + 45, w: t, h: 90 },
@@ -171,35 +197,28 @@ const funnel: TrackModuleDefinition = {
   },
 };
 
+const plinko: TrackModuleDefinition = {
+  kind: "plinko",
+  label: "Plinko",
+  weight: 2,
+  build(ctx) {
+    const rows = ctx.random.int(5, 6) + Math.round(ctx.difficulty * 2);
+    const grid = pegGrid({ left: ctx.left, right: ctx.right, top: ctx.y + 90, rows, ballRadius: ctx.ballRadius, pitch: 6, minPitch: 80 });
+    return { height: 90 + grid.span + 130, obstacles: gridObstacles(ctx, grid) };
+  },
+};
+
 const pinball: TrackModuleDefinition = {
   kind: "pinball",
   label: "Pinball",
   weight: 3,
   build(ctx) {
-    const { left, right, y, random } = ctx;
-    const width = right - left;
-    const pegR = 12;
-    const spacing = Math.max(passGap(ctx) + pegR * 2, 150);
+    const { random } = ctx;
     const rows = random.int(3, 5);
-    const rowH = spacing * 0.87;
-    const cols = Math.floor(width / spacing);
-    const obstacles: ObstacleSpec[] = [];
-    const bumperSlots = new Set(random.sample(Array.from({ length: rows * cols }, (_, i) => i), 2 + Math.round(ctx.difficulty)));
-    for (let row = 0; row < rows; row++) {
-      const offset = row % 2 ? spacing / 2 : 0;
-      for (let col = 0; col < cols; col++) {
-        const x = left + spacing / 2 + offset + col * spacing;
-        if (x > right - spacing / 3) continue;
-        const cy = y + 110 + row * rowH;
-        const slot = row * cols + col;
-        if (bumperSlots.has(slot)) {
-          obstacles.push(solid(`${ctx.id}-bumper-${slot}`, "bumper", [{ kind: "circle", x, y: cy, r: 34 }], { restitution: 0.9, kick: 6 + ctx.difficulty * 3 }));
-        } else {
-          obstacles.push(solid(`${ctx.id}-peg-${slot}`, "peg", [{ kind: "circle", x, y: cy, r: pegR }], { restitution: 0.7 }));
-        }
-      }
-    }
-    return { height: 110 + rows * rowH + 120, obstacles };
+    const grid = pegGrid({ left: ctx.left, right: ctx.right, top: ctx.y + 110, rows, ballRadius: ctx.ballRadius, pitch: 6.5, minPitch: 90 });
+    const slots = grid.pegs.filter((p) => !p.wall).map((p) => p.index);
+    const bumpers = new Set(random.sample(slots, 2 + Math.round(ctx.difficulty * 2)));
+    return { height: 110 + grid.span + 140, obstacles: gridObstacles(ctx, grid, { bumpers, kick: 6 + ctx.difficulty * 3 }) };
   },
 };
 
@@ -231,10 +250,17 @@ const tunnel: TrackModuleDefinition = {
     const gx = left + channelW * (slow + 0.5);
     const gateW = channelW * 0.55;
     obstacles.push(
-      solid(`${ctx.id}-sweeper`, "gate", [{ kind: "rect", x: gx, y: (top + bottom) / 2, w: gateW, h: 18 }], {
+      solid(`${ctx.id}-sweeper`, "gate", [{ kind: "rect", x: gx, y: top + (bottom - top) * 0.3, w: gateW, h: 18 }], {
         motion: { type: "oscillate", axis: { x: 1, y: 0 }, amplitude: (channelW - gateW) / 2 - 14, period: random.float(1.6, 2.6), phase: random.float(0, 6) },
       }),
     );
+    // Two staggered rows near each channel's exit, so no channel is a free fall.
+    for (let i = 0; i < channels; i++) {
+      const inner = { left: left + i * channelW + (i > 0 ? 10 : 0), right: left + (i + 1) * channelW - (i < channels - 1 ? 10 : 0) };
+      const grid = pegGrid({ ...inner, top: 0, rows: 2, ballRadius: ctx.ballRadius, minPitch: 90 });
+      const shifted = { ...grid, pegs: grid.pegs.map((p) => ({ ...p, y: bottom - 50 - grid.span + p.y })) };
+      obstacles.push(...gridObstacles({ ...ctx, id: `${ctx.id}-c${i}` }, shifted));
+    }
     return { height, obstacles };
   },
 };
@@ -256,6 +282,7 @@ const jump: TrackModuleDefinition = {
     const landTo = { x: landFrom.x + side * width * 0.5, y: landingY + width * 0.5 * 0.3 };
     return {
       height: 760,
+      route: [{ x: (left + right) / 2, y }, { x: lip.x, y: lip.y - ctx.ballRadius }, { x: landTo.x, y: landTo.y - ctx.ballRadius }],
       obstacles: [
         solid(`${ctx.id}-ramp`, "ramp", [bar({ x: from, y: y + 60 }, rampEnd, 22), bar(rampEnd, lip, 22)], { friction: 0.005, restitution: 0.2 }),
         solid(`${ctx.id}-landing`, "ramp", [bar(landFrom, landTo, 22)], { friction: 0.01 }),
@@ -274,10 +301,16 @@ const platforms: TrackModuleDefinition = {
     const n = random.int(3, 4);
     const pw = width * 0.3;
     const spacing = 210;
-    const obstacles: ObstacleSpec[] = [];
+    const r = ctx.ballRadius;
+    // Platforms stop short of the walls (never pinch a ball against them);
+    // ramps above steer wall-huggers into their stroke.
+    const margin = 2.2 * r + 10;
+    const reach = margin + 0.5 * r;
+    const first = 30 + reach * 0.55 + 2.6 * r + 10;
+    const obstacles: ObstacleSpec[] = wallDeflectors(ctx, y + 30, reach);
     for (let i = 0; i < n; i++) {
-      const cy = y + 100 + i * spacing;
-      const amplitude = ((width - pw) / 2 - 20) * random.float(0.5, 1);
+      const cy = y + first + i * spacing;
+      const amplitude = (width - pw) / 2 - margin;
       obstacles.push(
         solid(`${ctx.id}-platform-${i}`, "platform", [
           { kind: "rect", x: (left + right) / 2, y: cy, w: pw, h: 20, angle: random.float(-0.14, 0.14) },
@@ -286,7 +319,7 @@ const platforms: TrackModuleDefinition = {
         }),
       );
     }
-    return { height: 100 + n * spacing + 100, obstacles };
+    return { height: first + (n - 1) * spacing + 200, obstacles };
   },
 };
 
@@ -309,12 +342,19 @@ const bottleneck: TrackModuleDefinition = {
     const hub = 44;
     const reach = hub + r * 1.8;
     const opening = reach * 2 + r * 2 * 3;
-    const height = 680;
-    const neckY = y + height - 200;
+    const neckY = y + 480;
     const t = 24;
+    // Pegs under the two lanes beside the wheel, clear of its paddles.
+    const pegR = Math.max(10, 0.6 * r);
+    const laneX = reach + 1.5 * r;
+    const clear = reach + pegR + 2.4 * r;
+    const pegY = neckY + 20 + Math.sqrt(Math.max(0, clear * clear - laneX * laneX)) + 0.3 * r;
     return {
-      height,
+      height: pegY - y + pegR + 2.6 * r + 30,
       obstacles: [
+        ...[-1, 1].map((side) =>
+          solid(`${ctx.id}-peg-${side < 0 ? "l" : "r"}`, "peg", [{ kind: "circle", x: cx + side * laneX, y: pegY, r: pegR }], { restitution: 0.6 }),
+        ),
         solid(`${ctx.id}-l`, "funnel", [bar({ x: left - 10, y: y + 40 }, { x: cx - opening / 2, y: neckY }, t)], { friction: 0.01 }),
         solid(`${ctx.id}-r`, "funnel", [bar({ x: right + 10, y: y + 40 }, { x: cx + opening / 2, y: neckY }, t)], { friction: 0.01 }),
         paddleWheel(ctx, `${ctx.id}-wheel`, { x: cx, y: neckY + 20 }, hub, reach, 2, random.float(1.6, 2.6) * random.sign()),
@@ -336,6 +376,7 @@ const wheel: TrackModuleDefinition = {
     return {
       height,
       obstacles: [
+        ...wallDeflectors(ctx, y + 30, passGap(ctx) + 0.5 * ctx.ballRadius),
         paddleWheel(ctx, `${ctx.id}-wheel`, { x: (left + right) / 2, y: y + height / 2 }, hub, reach, 3, random.float(0.7, 1.3) * random.sign()),
       ],
     };
@@ -347,18 +388,8 @@ const finalDrop: TrackModuleDefinition = {
   label: "Final Drop",
   weight: 0,
   build(ctx) {
-    const height = 640;
-    const pegR = 26;
-    const pegs = scatter(
-      ctx,
-      3 + ctx.random.int(0, 1),
-      { x: ctx.left + 120, y: ctx.y + 140, w: ctx.right - ctx.left - 240, h: height - 300 },
-      passGap(ctx) + pegR * 2 + 40,
-    );
-    return {
-      height,
-      obstacles: pegs.map((p, i) => solid(`${ctx.id}-peg-${i}`, "bumper", [{ kind: "circle", x: p.x, y: p.y, r: pegR }], { restitution: 0.9, kick: 4 })),
-    };
+    const grid = pegGrid({ left: ctx.left, right: ctx.right, top: ctx.y + 140, rows: 2, ballRadius: ctx.ballRadius, pitch: 9, minPitch: 150, maxPitch: 290, minPegRadius: 22 });
+    return { height: 140 + grid.span + 190, obstacles: gridObstacles(ctx, grid, { style: "bumper", kick: 4 }) };
   },
 };
 
@@ -387,6 +418,7 @@ export const TRACK_MODULES: Record<ModuleKind, TrackModuleDefinition> = {
   zigzag,
   spinner,
   funnel,
+  plinko,
   pinball,
   tunnel,
   jump,

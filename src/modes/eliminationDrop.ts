@@ -4,14 +4,15 @@ import { TICK_RATE } from "@/engine/physicsWorld";
 import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
 import { spawnPoints } from "@/engine/spawn";
 import type { ObstacleSpec, Rect, WorldLayout, ZoneSpec } from "@/engine/types";
+import { pegGrid } from "@/tracks/grid";
 import { autoRadius, eliminateKeepingOne } from "./shared";
 
 const WIDTH = 1080;
 const LEFT = 40;
 const RIGHT = WIDTH - 40;
-const GATE_DELAY = 1.6;
-const ROUND_LIMIT = 30;
-const SETTLE_TICKS = Math.round(1.2 * TICK_RATE);
+const GATE_DELAY = 2.9;
+const ROUND_LIMIT = 13;
+const SETTLE_TICKS = Math.round(1.7 * TICK_RATE);
 
 interface Board {
   layout: WorldLayout;
@@ -46,47 +47,52 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
     });
   }
 
-  const pegR = 10;
-  const spacing = Math.max(r * 2 * 2.5 + pegR * 2, 118);
-  const boardTop = gateY + 130;
-  const rows = scenario === "tall" ? 11 : 7;
-  const rowH = spacing * 0.87;
-  const cols = Math.floor(width / spacing);
-  const bumpers = new Set(random.sample(Array.from({ length: rows * cols }, (_, i) => i), scenario === "bumpers" ? 7 : 3));
-  for (let row = 0; row < rows; row++) {
-    const offset = row % 2 ? spacing / 2 : 0;
-    for (let col = 0; col < cols; col++) {
-      const x = LEFT + spacing / 2 + offset + col * spacing;
-      if (x > RIGHT - spacing / 3) continue;
-      const y = boardTop + row * rowH;
-      const slot = row * cols + col;
-      const bumper = bumpers.has(slot);
-      obstacles.push({
-        id: `peg-${slot}`,
-        style: bumper ? "bumper" : "peg",
-        shapes: [{ kind: "circle", x, y, r: bumper ? 26 : pegR }],
-        restitution: bumper ? 0.9 : 0.6,
-        kick: bumper ? 5 : 0,
-      });
-    }
+  // The Plinko grid: staggered rows that leave no straight lane for any ball
+  // size (see tracks/grid.ts), with wall bumps on the odd rows.
+  const boardTop = gateY + 110;
+  const rows = scenario === "tall" ? 10 : 7;
+  const grid = pegGrid({ left: LEFT, right: RIGHT, top: boardTop, rows, ballRadius: r, pitch: 6, minPitch: 90 });
+  const inner = grid.pegs.filter((p) => !p.wall).map((p) => p.index);
+  const bumpers = new Set(random.sample(inner, scenario === "bumpers" ? 8 : 3));
+  // Bumpers are a little bigger than pegs, never closing a gap.
+  const bumperR = Math.max(grid.pegRadius, Math.min(grid.pegRadius * 1.3, grid.pitch - grid.pegRadius - 2 * r * 1.9));
+  // Spinners replace the pegs they would sweep through.
+  const spinners =
+    scenario === "spinners"
+      ? [0, 1].map((i) => ({ x: LEFT + width * (0.27 + 0.46 * i), y: boardTop + grid.rowHeight * Math.floor(rows / 2), reach: grid.pitch * 0.95 }))
+      : [];
+  for (const p of grid.pegs) {
+    if (spinners.some((s) => Math.hypot(p.x - s.x, p.y - s.y) < s.reach + grid.pegRadius + r * 2.2)) continue;
+    const bumper = bumpers.has(p.index);
+    obstacles.push({
+      id: `peg-${p.index}`,
+      style: bumper ? "bumper" : "peg",
+      shapes: [{ kind: "circle", x: p.x, y: p.y, r: bumper ? bumperR : grid.pegRadius }],
+      restitution: bumper ? 0.9 : 0.55,
+      kick: bumper ? 5 : 0,
+    });
   }
-  if (scenario === "spinners") {
-    for (let i = 0; i < 2; i++) {
-      const pivot = { x: LEFT + width * (0.3 + 0.4 * i), y: boardTop + rowH * (rows / 2) };
-      obstacles.push({
-        id: `spinner-${i}`,
-        style: "spinner",
-        shapes: [{ kind: "rect", x: pivot.x, y: pivot.y, w: spacing * 1.6, h: 18 }],
-        motion: { type: "rotate", speed: random.float(1.2, 2) * (i ? -1 : 1), pivot },
-        restitution: 0.6,
-      });
-    }
-  }
+  spinners.forEach((pivot, i) => {
+    obstacles.push({
+      id: `spinner-${i}`,
+      style: "spinner",
+      shapes: [
+        { kind: "rect", x: pivot.x, y: pivot.y, w: pivot.reach * 2, h: 18 },
+        { kind: "circle", x: pivot.x, y: pivot.y, r: 18 },
+      ],
+      motion: { type: "rotate", speed: random.float(1.4, 2.2) * (i ? -1 : 1), pivot },
+      restitution: 0.6,
+    });
+  });
 
   const slots = slotCount(r);
   const slotW = width / slots;
-  const slotTop = boardTop + rows * rowH + 110;
-  const floorY = slotTop + Math.max(260, r * 9);
+  const slotTop = boardTop + grid.span + grid.pegRadius + 2.6 * r + 40;
+  // Deep enough that a slot catching twice its share never overflows (balls
+  // piled above a slot would never count as landed).
+  const slotRow = Math.max(1, Math.floor((slotW - 14) / (2 * r)));
+  const stack = Math.ceil((2 * count) / slots / slotRow);
+  const floorY = slotTop + Math.max(260, r * 9, stack * 2 * r * 0.9 + 2 * r);
   for (let i = 1; i < slots; i++) {
     const x = LEFT + i * slotW;
     obstacles.push({
@@ -103,7 +109,7 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
     zones.push({
       id: `slot-${i}`,
       kind: "eliminate",
-      shape: { kind: "rect", x: LEFT + i * slotW + 7, y: slotTop + r * 1.2, w: slotW - 14, h: floorY - slotTop - r * 1.2 },
+      shape: { kind: "rect", x: LEFT + i * slotW + 7, y: slotTop + r * 0.6, w: slotW - 14, h: floorY - slotTop - r * 0.6 },
       visible: true,
     });
   }
@@ -144,7 +150,9 @@ export const eliminationDrop: ModeDefinition = {
   defaultCamera: "follow-group",
   defaultParticipants: 48,
   defaultDuration: 240,
-  recommendedPhysics: { gravity: 1.6, maxSpeed: 20 },
+  // Softer bounces than the arena modes: balls work down the pegs instead of
+  // bouncing back up, which keeps a round at ~8–15 s.
+  recommendedPhysics: { gravity: 1.6, maxSpeed: 20, restitution: 0.45 },
 
   autoBallRadius(count) {
     return autoRadius(1000 * 380, count, 0.3, 11, 26);

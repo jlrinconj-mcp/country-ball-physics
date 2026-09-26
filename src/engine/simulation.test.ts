@@ -189,9 +189,11 @@ describe("golden fingerprints (cross-engine determinism)", () => {
   // say so: old seeds will replay differently from then on.
   const GOLDEN: Record<string, string> = {
     "last-country-standing": "44bfad49:AJX:2731",
-    race: "9c342593:AUX:1581",
-    "elimination-drop": "7e7efca3:APX:3026",
-    "marble-race": "27137b5a:ASX:1351",
+    // Updated with the corridor-free modules and the new Plinko board.
+    race: "fdd1d011:ABX:1812",
+    "elimination-drop": "75e41fc7:AXX:2097",
+    "marble-race": "018f47a3:APX:2048",
+    "last-place-elimination": "6182f74f:ACX:15569",
   };
   const golden = makeTestCountries(24);
 

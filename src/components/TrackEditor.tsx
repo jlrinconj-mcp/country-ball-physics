@@ -17,7 +17,7 @@ const label = (kind: string) => TRACK_MODULES[kind as ModuleKind]?.label ?? kind
  */
 export function TrackEditor({ config, onConfig }: { config: SimulationConfig; onConfig: (c: SimulationConfig) => void }) {
   const scenarios = config.mode === "marble-race" ? MARBLE_SCENARIOS : RACE_SCENARIOS;
-  const preview = previewSequence(scenarios, config.scenario, config.seed);
+  const preview = previewSequence(scenarios, config.scenario, config.seed, config.map);
   const [adding, setAdding] = useState<ModuleKind>("zigzag");
   const custom = config.track;
   const sequence = custom?.sequence ?? preview;

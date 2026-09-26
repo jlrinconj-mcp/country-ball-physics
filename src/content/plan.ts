@@ -6,6 +6,7 @@ import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
 import { getMode, listModes, modeDefaults } from "@/modes";
 import type { TournamentSize } from "@/modes/tournament";
 import { DEFAULT_DISPLAY, type DisplayOptions } from "@/render/displayOptions";
+import { getMap } from "@/tracks/maps";
 import { MIDDLE_MODULES } from "@/tracks/types";
 import type { VideoFormat } from "@/render/formats";
 
@@ -35,6 +36,11 @@ export interface GenerateRequest {
   physics?: Partial<PhysicsSettings>;
   /** Race modes: custom module sequence (see the track editor). */
   customTrack?: { sequence: string[]; difficulty?: number };
+  /**
+   * Named map from the registry ("plinko", "zigzag"…). Race modes run on it;
+   * Last Place Elimination takes it as its scenario.
+   */
+  map?: string;
   /** Time limit override, seconds. */
   maxDuration?: number;
 }
@@ -65,8 +71,14 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
 
   const { codes, label } = resolveCountries(request, countries, random.fork("selection"));
 
+  if (request.map) {
+    getMap(request.map);
+    if (mode !== "race" && mode !== "marble-race" && mode !== "last-place-elimination") throw new Error(`Maps apply to race modes and last-place-elimination, not ${mode}`);
+  }
   const scenario =
-    request.track === "random"
+    request.map && mode === "last-place-elimination"
+      ? request.map
+      : request.track === "random"
       ? random.fork("scenario").pick(definition.scenarios).id
       : (request.track ?? definition.scenarios[0]?.id ?? "default");
   if (!definition.scenarios.some((s) => s.id === scenario)) {
@@ -103,6 +115,7 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
     maxDuration: request.maxDuration ?? defaults.maxDuration,
     ...(tournament ? { tournament } : {}),
     ...(track ? { track } : {}),
+    ...(request.map && mode !== "last-place-elimination" ? { map: request.map } : {}),
   };
   const display: DisplayOptions = {
     ...DEFAULT_DISPLAY,

@@ -25,8 +25,9 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 | --- | --- | --- |
 | **Last Country Standing** | Everyone starts inside spinning rings. Escape the outer ring and you're out; the last country inside wins. Gaps widen over time, so every run ends. | Spinning Ring · Double Ring · Triple Ring |
 | **Country Race** | Countries wait behind a gate (3-2-1-GO), then race down a seeded procedural track. First across the line wins; the podium is tracked. | Classic · Sprint · Marathon |
-| **Elimination Drop** | Plinko rounds: countries drop through pegs, bumpers and spinners into slots. Green slots survive, red ones are out. Survivors go back to the top with fewer safe slots, until one is left. | Classic Plinko · Bumper Frenzy · Spinners · Tall Board |
+| **Elimination Drop** | Plinko rounds: countries drop through pegs, bumpers and spinners into slots. Green slots survive, red ones are out. Survivors go back to the top with fewer safe slots, until one is left. Each round takes 8–15 s. | Classic Plinko · Bumper Frenzy · Spinners · Tall Board |
 | **Marble Race** | A marble run of ramps, tunnels, wheels, funnels, bottlenecks and moving platforms. | Grand Prix · Switchbacks · Machines |
+| **Last Place Elimination** | "32 COUNTRIES / LAST PLACE IS ELIMINATED". Every round the whole field races one map; crossing the line makes a country safe (it leaves the track and waits), and the last one still on the course is out. Everyone restarts from a new seeded grid position each round, through FINAL 5, FINAL 3 and the FINAL ROUND. The camera follows the fight for last place. | Any map: Plinko · Pinball · Zigzag · Funnel · Spinner · Drop · Marble Run |
 | **Tournament** | 8, 16, 32 or 64 countries. A seeded draw splits them into heats of up to 8, played in any mode above; the best of each heat advance to a final. | Any mode / scenario |
 
 ## Features
@@ -34,7 +35,9 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 - **Real country data:** 250 countries and territories (194 sovereign), with names, ISO codes, region, subregion and continent.
 - **Real flags,** cover-fitted into circles without distortion. Flags with emblems near the hoist (stars, cantons) are cropped toward it, and everything gets shading and an outline.
 - **Real physics (Matter.js):** gravity, ball–ball and ball–wall collisions, restitution, friction, air drag, speed caps, rotation, impulses (bumpers), and kinematic obstacles (rings, spinners, wheels, sliding gates, oscillating platforms) that really push balls.
-- **Procedural tracks:** `generateTrack(seed, options)` builds a track from 13 modules: Start, Drop, Zigzag, Spinner, Funnel, Pinball, Tunnel, Jump, Platforms, Bottleneck, Wheel, Final Drop, Finish.
+- **Procedural tracks:** `generateTrack(seed, options)` builds a track from 14 modules: Start, Drop, Zigzag, Spinner, Funnel, Plinko, Pinball, Tunnel, Jump, Platforms, Bottleneck, Wheel, Final Drop, Finish.
+- **No corridors:** a corridor detector (`src/tracks/corridors.ts`) checks that no module leaves a straight vertical lane a ball could fall through untouched, for every ball size, counting moving parts by the area they sweep. Peg fields use a staggered grid (`src/tracks/grid.ts`) sized from the ball radius, with wall bumps on alternate rows; spinners, wheels and platforms get wall deflectors. It runs as a test and as `npm run corridors`.
+- **Map registry:** named track recipes (`src/tracks/maps.ts`): Plinko, Pinball, Zigzag, Funnel, Spinner, Drop and Marble Run. Race and Marble Race can run on any of them (`config.map`, the Map selector, `--map` in the CLI); Last Place Elimination uses them as its scenarios. Each map's pacing is measured with `npm run maps`.
 - **Track editor:** pick, order and remove the modules of a race track; the geometry inside each module stays seeded.
 - **Cameras:** fixed, follow leader, follow action (the leading pack, leader always in frame), follow main group. All have dynamic zoom and smoothing measured in real time.
 - **Output formats:** 9:16 (1080×1920), plus 4:5, 1:1 and 16:9, with platform safe areas (TikTok/Reels/Shorts overlays) and a toggle to show them.
@@ -82,6 +85,8 @@ Buttons: **Generate Simulation** (apply the settings) · **Restart** (same run f
 | `npm run generate -- …` | Content factory (see below) |
 | `npm run tournament -- …` | Custom tournaments from JSON specs (see below) |
 | `npm run probe -- --mode=race --runs=5` | Headless stats: duration, winner, lead changes, CPU per tick |
+| `npm run maps -- --count=32 --seeds=2` | Round-length report for every map in Last Place Elimination |
+| `npm run corridors` | Open-lane report for every track module, ball size and seed |
 | `npm run render:frames -- --mode=race --times=0,5,end` | Render PNG frames to `output/frames` |
 
 ## Content factory
@@ -144,7 +149,8 @@ Spec fields: `name`, `seed`, `countries` (`"all"`, a preset, a continent or ISO 
 - no ball sits still for more than 4 s (an anti-stall nudge kicks in at 3 s), and balls crawl (< 120 px/s) less than 12% of the time
 - no ball tunnels out of the track, and no ball moves much more than its speed cap in one tick (no teleports)
 - more gravity always makes races faster
-- cameras never jump more than 8% of the frame per 1/60 s, and follow cameras keep the leader in shot
+- cameras never jump more than 8% of the frame per 1/60 s, and follow cameras keep the leader in shot (Last Place Elimination: the country in last place); a new round is a cut, not a pan
+- no track module leaves a corridor, and Elimination Drop and Last Place Elimination rounds stay at 8–15 s
 - the loop plays in real time at 144, 60, 30, 5 and even 1.5 FPS, drops long stalls instead of fast-forwarding, and never spirals when the CPU can't keep up
 
 When the display frame rate drops below 24 FPS (some embedded previews throttle animation), the results panel says so: the simulation still runs at real speed, only the drawing gets choppy.
@@ -194,8 +200,9 @@ src/
     camera.ts          Fixed / leader / action / group camera with smoothing
     simulationLoop.ts  requestAnimationFrame loop with accumulator + interpolation
   entities/            CountryBall, Obstacle, Zone (eliminators, goals, safe zones)
-  modes/               Last Country Standing, Race, Elimination Drop, Marble Race, Tournament
-  tracks/              generateTrack() and the 13 track modules
+  modes/               Last Country Standing, Race, Elimination Drop, Marble Race, Last Place Elimination, Tournament
+    rounds.ts          RoundManager: intro → racing → result → next round
+  tracks/              generateTrack(), the 14 track modules, peg grid, corridor detector, map registry, course path
   render/              Canvas renderer, HUD, flag atlas, formats, safe areas, themes
   audio/               Synthesized, rate-limited sound engine
   content/             planSimulation, generateSimulation, metadata templates
@@ -212,8 +219,9 @@ The engine, tracks, modes and content modules have no DOM or React dependency, s
 - **Accumulator loop.** In the browser, real elapsed time × playback speed fills an accumulator. Whole ticks are drained from it, and rendering interpolates between the last two ticks (`alpha`). Frame rate and speed decide *how many* ticks run per frame, never *what* happens in them.
 - **Data-first worlds.** Modes and the track generator describe a `WorldLayout`: obstacles, zones and spawn area as plain data (shapes plus scripted motion). The engine builds Matter.js bodies from it.
 - **Kinematic obstacles.** Rings, spinners, wheels, gates and platforms are static bodies posed every sub-step from an absolute function of time (or by rules, for reusable gates), with velocity handed to the solver so they push balls. No drift, identical on every replay.
-- **Rules as hooks.** A mode provides `createLayout()` and rules (`beforeStep`, `afterStep`, `rank`, `progress`, `hud`, `onTimeout`). The engine handles eliminations, finishes, places, teleports, leader tracking (with hysteresis) and results. Tournaments are sequences of ordinary simulations with derived seeds.
-- **Events.** `simulationStarted`, `countryEliminated`, `countryFinished`, `countryTakesLead`, `leaderChanged`, `raceFinished`, `winnerDeclared`, `simulationFinished`, `roundStarted`, and `impact` (for audio). HUD, audio, UI and results subscribe; nothing listening can change the physics.
+- **Rules as hooks.** A mode provides `createLayout()` and rules (`beforeStep`, `afterStep`, `rank`, `progress`, `hud`, `cameraSubjects`, `onTimeout`). The engine handles eliminations, finishes, places, teleports, parking (a ball leaves the world without being decided and comes back with `unpark`), leader tracking (with hysteresis) and results. Round-based modes use `RoundManager`; start gates are opened by the mode (`startGate`), so they can close again between rounds. Tournaments are sequences of ordinary simulations with derived seeds.
+- **Progress along the course.** Track modules describe the route balls take through them (e.g. along zigzag ramps); `CoursePath` measures how far along it a ball is. Last Place Elimination ranks by it, breaking ties by height, then by the previous round's finishing order, then by spawn order: never by chance.
+- **Events.** `simulationStarted`, `countryEliminated`, `countryFinished`, `countryParked`, `countryTakesLead`, `leaderChanged`, `raceFinished`, `winnerDeclared`, `simulationFinished`, `roundStarted`, and `impact` (for audio). HUD, audio, UI and results subscribe; nothing listening can change the physics.
 - **React stays out of the frame loop.** `SimulationController` owns the canvas, loop, audio and recorder. React reads throttled snapshots through `useSyncExternalStore`, a few times a second at most.
 - **Rendering.** Flags are pre-rendered once into circular sprites; each frame is one rotated `drawImage` per ball, with off-screen culling. Everything is drawn in the format's virtual resolution (e.g. 1080×1920) and scaled to the display. HUD animations run on simulation time, so recorded frames are reproducible too.
 
@@ -231,7 +239,7 @@ Every random decision goes through `createRandom(seed)` (cyrb128 hash → sfc32 
 | `velocity` | Initial velocities and spin |
 | `layout` | Arena and track generation (module picks, geometry, ring spin…) |
 | `forces` | Random kicks and anti-stall nudges |
-| `rounds` | Elimination Drop safe slots and respawns |
+| `rounds` | Elimination Drop safe slots and respawns; Last Place Elimination starting grid for each round |
 | `tournament` | Tournament entrants and draw (each heat gets `seed/rN-hM`) |
 | `content` | Content-factory choices (random mode, track, preset picks, titles) |
 

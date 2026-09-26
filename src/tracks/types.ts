@@ -1,5 +1,5 @@
 import type { Random } from "@/engine/random";
-import type { ObstacleSpec, Rect, ZoneSpec } from "@/engine/types";
+import type { ObstacleSpec, Rect, Vec2, ZoneSpec } from "@/engine/types";
 
 export const MODULE_KINDS = [
   "start",
@@ -7,6 +7,7 @@ export const MODULE_KINDS = [
   "zigzag",
   "spinner",
   "funnel",
+  "plinko",
   "pinball",
   "tunnel",
   "jump",
@@ -47,6 +48,11 @@ export interface ModuleOutput {
   spawn?: Rect;
   /** Start module only: when the gate opens (seconds). */
   gateOpensAt?: number;
+  /**
+   * The way balls go through the module, top to bottom, when it isn't
+   * straight down the middle (e.g. along zigzag ramps). Used for progress.
+   */
+  route?: Vec2[];
 }
 
 export interface TrackModuleDefinition {
@@ -75,6 +81,8 @@ export interface TrackDefinition {
   startY: number;
   finishY: number;
   gateOpensAt: number;
+  /** Centre line balls follow from the gate to the finish (progress metric). */
+  path: Vec2[];
 }
 
 export interface TrackOptions {

@@ -131,6 +131,7 @@ export class AudioEngine {
       sim.events.on("countryEliminated", ({ ball }) => this.play("eliminate", { pan: panOf(ball.x) })),
       sim.events.on("leaderChanged", () => this.play("leader", { intensity: 0.7 })),
       sim.events.on("countryFinished", ({ ball }) => this.play("finish", { pan: panOf(ball.x) })),
+      sim.events.on("countryParked", ({ ball }) => this.play("finish", { intensity: 0.4, pan: panOf(ball.x) })),
       sim.events.on("winnerDeclared", () => this.play("victory")),
       sim.events.on("roundStarted", () => this.play("countdown")),
     ];

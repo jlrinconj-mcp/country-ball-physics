@@ -31,6 +31,8 @@ const MAX_ZOOM_FACTOR = 2.2;
 const LEADER_FRAME = 0.85;
 /** Side margin kept around the framed region, in output pixels. */
 const FRAME_MARGIN = 28;
+/** When the kept-in-shot ball changes, catch up at most this many frame heights per second. */
+const HANDOVER_SPEED = 4;
 
 /**
  * Smooth camera. Targets come from the simulation state (leader, pack,
@@ -41,6 +43,11 @@ export class Camera {
   pose: CameraPose = { x: 0, y: 0, zoom: 1 };
   private viewport: Viewport = { width: 1080, height: 1920, content: { x: 0, y: 0, w: 1080, h: 1920 } };
   options: CameraOptions = { mode: "fixed", dynamicZoom: true };
+  /** Last `sim.cameraCut` seen: a change means cut, don't pan. */
+  private cut: { sim: Simulation | null; value: number } = { sim: null, value: 0 };
+  /** Ball kept in shot last frame, and whether we're still catching up to it. */
+  private kept: CountryBall | null = null;
+  private handover = false;
 
   setViewport(viewport: Viewport): void {
     this.viewport = viewport;
@@ -52,10 +59,15 @@ export class Camera {
 
   /** Jump straight to the target (new simulation, format change). */
   snap(sim: Simulation, alpha = 1): void {
+    this.cut = { sim, value: sim.cameraCut };
     this.pose = this.target(sim, alpha);
   }
 
   update(sim: Simulation, alpha: number, dt: number): void {
+    if (this.cut.sim !== sim || this.cut.value !== sim.cameraCut) {
+      this.snap(sim, alpha);
+      return;
+    }
     const target = this.target(sim, alpha);
     const kp = 1 - Math.exp(-POSITION_STIFFNESS * dt);
     const kz = 1 - Math.exp(-ZOOM_STIFFNESS * dt);
@@ -64,18 +76,21 @@ export class Camera {
       y: this.pose.y + (target.y - this.pose.y) * kp,
       zoom: this.pose.zoom + (target.zoom - this.pose.zoom) * kz,
     };
-    this.keepLeaderInFrame(sim, alpha);
+    this.keepLeaderInFrame(sim, alpha, dt);
   }
 
   /**
    * Smoothing lags behind a fast leader; in leader/action modes never let it
-   * drift out of shot. The leader's speed is capped, so this can't whip.
+   * drift out of shot. The leader's speed is capped, so this can't whip; when
+   * a different ball takes over (possibly across the screen), the camera
+   * pans over at a bounded speed instead of jumping.
    */
-  private keepLeaderInFrame(sim: Simulation, alpha: number): void {
+  private keepLeaderInFrame(sim: Simulation, alpha: number, dt: number): void {
     const mode = this.options.mode;
     if (mode !== "follow-leader" && mode !== "follow-action") return;
-    const leader = sim.leader?.alive ? sim.leader : null;
-    if (!leader) return;
+    // Modes that pick their own subjects keep the first one in shot.
+    const leader = sim.rules.cameraSubjects ? (sim.rules.cameraSubjects()[0] ?? null) : sim.leader?.active ? sim.leader : null;
+    if (!leader?.active) return;
     const x = lerp(leader.prevX, leader.x, alpha);
     const y = lerp(leader.prevY, leader.y, alpha);
     const marginX = (this.viewport.width / 2 / this.pose.zoom) * LEADER_FRAME - leader.radius;
@@ -85,7 +100,20 @@ export class Camera {
     else if (x < px - marginX) px = x + marginX;
     if (y > py + marginY) py = y - marginY;
     else if (y < py - marginY) py = y + marginY;
-    if (px !== this.pose.x || py !== this.pose.y) this.pose = { ...this.pose, x: px, y: py };
+    if (leader !== this.kept) {
+      this.kept = leader;
+      this.handover = true;
+    }
+    if (this.handover) {
+      const max = (HANDOVER_SPEED * this.viewport.height * dt) / this.pose.zoom;
+      const dx = px - this.pose.x;
+      const dy = py - this.pose.y;
+      if (Math.abs(dx) <= max && Math.abs(dy) <= max) this.handover = false;
+      px = this.pose.x + Math.max(-max, Math.min(max, dx));
+      py = this.pose.y + Math.max(-max, Math.min(max, dy));
+    }
+    // Never past the world's edges (a subject inside the world stays in shot).
+    if (px !== this.pose.x || py !== this.pose.y) this.pose = this.clamp({ ...this.pose, x: px, y: py }, sim.layout.bounds);
   }
 
   /**
@@ -123,18 +151,22 @@ export class Camera {
     const centreOfFocus = { x: focus.x + focus.w / 2, y: focus.y + focus.h / 2, zoom: fitAll };
     if (mode === "fixed") return centreOfFocus;
 
-    const balls = sim.balls.filter((b) => b.alive);
+    const balls = sim.balls.filter((b) => b.active);
+    const chosen = sim.rules.cameraSubjects?.();
+    if (chosen && chosen.length === 0 && sim.status === "running") return this.pose;
     if (balls.length === 0) {
       const w = sim.winner;
       return w ? this.clamp({ x: focus.x + focus.w / 2, y: w.y, zoom: fitWidth }, bounds) : centreOfFocus;
     }
 
     let subject: CountryBall[];
-    if (mode === "follow-leader") {
-      const leader = sim.leader && sim.leader.alive ? sim.leader : (sim.rules.rank().find((b) => b.alive) ?? balls[0]);
+    if (chosen?.length) {
+      subject = mode === "follow-leader" ? chosen.slice(0, 1) : chosen;
+    } else if (mode === "follow-leader") {
+      const leader = sim.leader && sim.leader.active ? sim.leader : (sim.rules.rank().find((b) => b.active) ?? balls[0]);
       subject = leader ? [leader] : balls;
     } else if (mode === "follow-action") {
-      const ranked = sim.rules.rank().filter((b) => b.alive);
+      const ranked = sim.rules.rank().filter((b) => b.active);
       subject = ranked.slice(0, Math.max(3, Math.ceil(ranked.length * (sim.rules.progress ? 0.1 : 0.2))));
     } else {
       subject = trimmed(balls, 0.1);
@@ -155,7 +187,7 @@ export class Camera {
     let y = box.y + box.h / 2 + lookAhead;
     // Racing pack shots always keep the leader in frame, a little below centre.
     const lead = subject[0];
-    if (mode === "follow-action" && sim.rules.progress && lead) {
+    if (mode === "follow-action" && sim.rules.progress && lead && !chosen?.length) {
       const halfH = content.h / 2 / zoom;
       const leadY = lerp(lead.prevY, lead.y, alpha);
       y = Math.min(leadY + halfH * 0.2, Math.max(leadY - halfH * 0.7, y));

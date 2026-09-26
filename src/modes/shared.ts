@@ -2,7 +2,7 @@ import type { CountryBall } from "@/entities/CountryBall";
 import type { Random } from "@/engine/random";
 import type { Simulation } from "@/engine/simulation";
 import type { ObstacleSpec, Vec2 } from "@/engine/types";
-import { TICK_RATE } from "@/engine/physicsWorld";
+import { TICK_DT, TICK_RATE } from "@/engine/physicsWorld";
 
 const TAU = Math.PI * 2;
 
@@ -85,4 +85,50 @@ export function eliminateKeepingOne(sim: Simulation, candidates: CountryBall[], 
 export function autoRadius(area: number, count: number, fill: number, min: number, max: number): number {
   const r = Math.sqrt((fill * area) / Math.PI / Math.max(1, count));
   return Math.min(max, Math.max(min, r));
+}
+
+export interface StartGate {
+  /** Start opening at simulated time `at` (default: now). */
+  open(at?: number): void;
+  /** Snap shut (new round). */
+  close(): void;
+  /** Pose the gate for the coming tick. Call from `beforeStep`. */
+  update(): void;
+  readonly opening: boolean;
+}
+
+/**
+ * The two sliding halves of a start gate (`…gate-l` / `…gate-r`, manual
+ * motion). Modes decide when it opens, and can close it again between rounds.
+ */
+export function startGate(sim: Simulation, duration = 0.45): StartGate {
+  const halves = sim.obstacles
+    .filter((o) => /(^|-)gate-[lr]$/.test(o.id) && o.motion?.type === "manual")
+    .map((o) => {
+      const shape = o.spec.shapes[0];
+      const travel = (shape && shape.kind === "rect" ? shape.w : 0) + 60;
+      return { obstacle: o, dx: (o.id.endsWith("l") ? -1 : 1) * travel };
+    });
+  let openedAt: number | null = null;
+  const set = (amount: number) => {
+    for (const { obstacle, dx } of halves) obstacle.manualOffset = { x: dx * amount, y: 0 };
+  };
+  return {
+    open(at = sim.time) {
+      openedAt ??= at;
+    },
+    close() {
+      openedAt = null;
+      set(0);
+    },
+    update() {
+      if (openedAt === null) return set(0);
+      // Pose for the end of the coming tick.
+      const t = Math.min(1, Math.max(0, (sim.time + TICK_DT - openedAt) / duration));
+      set(t * t * (3 - 2 * t));
+    },
+    get opening() {
+      return openedAt !== null;
+    },
+  };
 }

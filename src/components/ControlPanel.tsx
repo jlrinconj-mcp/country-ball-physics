@@ -6,6 +6,7 @@ import type { CameraMode } from "@/engine/simulation";
 import type { ModeId, PhysicsSettings, SimulationConfig } from "@/engine/types";
 import { getMode, listModes, modeDefaults } from "@/modes";
 import { TOURNAMENT_SIZES, type TournamentSize } from "@/modes/tournament";
+import { findMap, listMaps } from "@/tracks/maps";
 import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
@@ -21,7 +22,14 @@ export const CAMERA_OPTIONS: { value: CameraMode; label: string }[] = [
 ];
 
 export function seedPrefix(mode: ModeId): string {
-  return { "last-country-standing": "lcs", race: "race", "elimination-drop": "drop", "marble-race": "marble" }[mode];
+  const prefixes: Record<ModeId, string> = {
+    "last-country-standing": "lcs",
+    race: "race",
+    "elimination-drop": "drop",
+    "marble-race": "marble",
+    "last-place-elimination": "last",
+  };
+  return prefixes[mode];
 }
 
 export function ControlPanel({
@@ -65,7 +73,7 @@ export function ControlPanel({
               onConfig({ ...config, tournament: { size: 16 }, seed: generateSeed("cup") });
               return;
             }
-            onConfig({ ...config, ...modeDefaults(id), tournament: undefined, track: undefined, seed: generateSeed(seedPrefix(id)) });
+            onConfig({ ...config, ...modeDefaults(id), tournament: undefined, track: undefined, map: undefined, seed: generateSeed(seedPrefix(id)) });
             onDisplay({ ...display, camera: getMode(id).defaultCamera });
           }}
         />
@@ -85,7 +93,7 @@ export function ControlPanel({
               value={config.mode}
               options={listModes().map((m) => ({ value: m.id, label: m.label }))}
               onChange={(id) => {
-                onConfig({ ...config, ...modeDefaults(id), tournament, track: undefined });
+                onConfig({ ...config, ...modeDefaults(id), tournament, track: undefined, map: undefined });
                 onDisplay({ ...display, camera: getMode(id).defaultCamera });
               }}
             />
@@ -93,12 +101,23 @@ export function ControlPanel({
         )}
         {!tournament && <p className="text-xs leading-relaxed text-zinc-500">{mode.description}</p>}
         <Select
-          label={tournament ? "Heat scenario" : "Scenario"}
+          label={config.mode === "last-place-elimination" ? (tournament ? "Heat map" : "Map") : tournament ? "Heat scenario" : "Scenario"}
           value={scenario?.id ?? ""}
           options={mode.scenarios.map((s) => ({ value: s.id, label: s.label }))}
           onChange={(id) => onConfig({ ...config, scenario: id })}
         />
         {scenario && <p className="text-xs text-zinc-500">{scenario.description}</p>}
+        {(config.mode === "race" || config.mode === "marble-race") && (
+          <>
+            <Select
+              label="Map"
+              value={config.map ?? ""}
+              options={[{ value: "", label: "Procedural (scenario)" }, ...listMaps().map((m) => ({ value: m.id, label: m.label }))]}
+              onChange={(id) => onConfig({ ...config, map: id || undefined, track: undefined })}
+            />
+            {findMap(config.map) && <p className="text-xs text-zinc-500">{findMap(config.map)?.description}</p>}
+          </>
+        )}
       </Section>
 
       {(config.mode === "race" || config.mode === "marble-race") && <TrackEditor config={config} onConfig={onConfig} />}
@@ -172,7 +191,7 @@ export function ControlPanel({
         <Slider label="Ball size" value={config.physics.ballScale} min={0.5} max={1.6} step={0.05} onChange={(ballScale) => physics({ ballScale })} format={(v) => `${Math.round(v * 100)}%`} />
         <Slider label="Max speed" value={config.physics.maxSpeed} min={8} max={40} step={1} onChange={(maxSpeed) => physics({ maxSpeed })} />
         <Slider label="Chaos (random kicks)" value={config.physics.chaos} min={0} max={1} step={0.05} onChange={(chaos) => physics({ chaos })} format={(v) => `${Math.round(v * 100)}%`} />
-        <Slider label="Max duration" value={config.maxDuration} min={10} max={300} step={5} onChange={(maxDuration) => onConfig({ ...config, maxDuration })} format={(v) => `${v}s`} />
+        <Slider label="Max duration" value={config.maxDuration} min={10} max={900} step={5} onChange={(maxDuration) => onConfig({ ...config, maxDuration })} format={(v) => `${v}s`} />
       </Section>
 
       <Section title="Video">
