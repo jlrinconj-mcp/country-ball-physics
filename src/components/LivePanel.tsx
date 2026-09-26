@@ -31,6 +31,13 @@ export function LivePanel({ snapshot, countries }: { snapshot: ControllerSnapsho
         <Stat label="Remaining" value={snapshot.total ? `${snapshot.alive}/${snapshot.total}` : "–"} />
       </div>
 
+      {snapshot.fps > 0 && snapshot.fps < 24 && snapshot.phase === "running" && !snapshot.paused && (
+        <p className="border-b border-white/[0.06] bg-amber-400/10 px-4 py-2.5 text-xs leading-relaxed text-amber-200">
+          Low frame rate ({snapshot.fps} fps): motion looks choppy, but the simulation still runs at real speed. Embedded
+          previews throttle animation; open the app in a regular browser tab for smooth playback.
+        </p>
+      )}
+
       {winner && result && (
         <div className="border-b border-white/[0.06] px-4 py-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-300">Winner</p>

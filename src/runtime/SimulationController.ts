@@ -53,6 +53,8 @@ export interface ControllerSnapshot {
   replay: "identical" | "different" | null;
   tournament: TournamentSummary | null;
   recording: boolean;
+  /** Smoothed display frame rate (0 until measured). */
+  fps: number;
 }
 
 export const EMPTY_SNAPSHOT: ControllerSnapshot = {
@@ -71,6 +73,7 @@ export const EMPTY_SNAPSHOT: ControllerSnapshot = {
   replay: null,
   tournament: null,
   recording: false,
+  fps: 0,
 };
 
 /**
@@ -103,6 +106,7 @@ export class SimulationController {
   private detachAudio: (() => void) | null = null;
   private lastBanner: string | undefined;
   private recorder: CanvasRecorder | null = null;
+  private fps = 0;
   private replay: ControllerSnapshot["replay"] = null;
 
   constructor() {
@@ -328,6 +332,8 @@ export class SimulationController {
   }
 
   private render(alpha: number, dt: number): void {
+    // Exponential moving average of the frame rate (ignores idle gaps).
+    if (dt > 0 && dt < 1) this.fps = this.fps === 0 ? 1 / dt : this.fps * 0.9 + (1 / dt) * 0.1;
     const sim = this.sim;
     const renderer = this.renderer;
     if (!sim || !renderer || !this.hud) return;
@@ -402,6 +408,7 @@ export class SimulationController {
       replay: this.replay,
       tournament: this.tournament?.summary() ?? null,
       recording: this.recorder !== null,
+      fps: Math.round(this.fps),
     });
   }
 

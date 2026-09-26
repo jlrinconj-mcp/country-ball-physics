@@ -27,6 +27,8 @@ export interface CameraOptions {
 const POSITION_STIFFNESS = 3.2;
 const ZOOM_STIFFNESS = 1.6;
 const MAX_ZOOM_FACTOR = 2.2;
+/** Leader stays within this fraction of the content half-height from centre. */
+const LEADER_FRAME = 0.85;
 /** Side margin kept around the framed region, in output pixels. */
 const FRAME_MARGIN = 28;
 
@@ -62,6 +64,28 @@ export class Camera {
       y: this.pose.y + (target.y - this.pose.y) * kp,
       zoom: this.pose.zoom + (target.zoom - this.pose.zoom) * kz,
     };
+    this.keepLeaderInFrame(sim, alpha);
+  }
+
+  /**
+   * Smoothing lags behind a fast leader; in leader/action modes never let it
+   * drift out of shot. The leader's speed is capped, so this can't whip.
+   */
+  private keepLeaderInFrame(sim: Simulation, alpha: number): void {
+    const mode = this.options.mode;
+    if (mode !== "follow-leader" && mode !== "follow-action") return;
+    const leader = sim.leader?.alive ? sim.leader : null;
+    if (!leader) return;
+    const x = lerp(leader.prevX, leader.x, alpha);
+    const y = lerp(leader.prevY, leader.y, alpha);
+    const marginX = (this.viewport.width / 2 / this.pose.zoom) * LEADER_FRAME - leader.radius;
+    const marginY = (this.viewport.content.h / 2 / this.pose.zoom) * LEADER_FRAME;
+    let { x: px, y: py } = this.pose;
+    if (x > px + marginX) px = x - marginX;
+    else if (x < px - marginX) px = x + marginX;
+    if (y > py + marginY) py = y - marginY;
+    else if (y < py - marginY) py = y + marginY;
+    if (px !== this.pose.x || py !== this.pose.y) this.pose = { ...this.pose, x: px, y: py };
   }
 
   /**

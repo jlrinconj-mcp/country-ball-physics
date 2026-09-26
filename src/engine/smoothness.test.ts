@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import { createSimulation, getMode, modeDefaults } from "@/modes";
+import { Camera } from "./camera";
+import { DEFAULT_CONFIG } from "./defaults";
+import { TICK_RATE } from "./physicsWorld";
+import type { CameraMode, Simulation } from "./simulation";
+import { makeTestCountries } from "./testing";
+import type { ModeId, SimulationConfig } from "./types";
+
+/**
+ * "Smooth" in numbers. These guard the things that make a video look broken:
+ * balls parked mid-track, crawling, tunnelling through walls, teleporting,
+ * gravity that doesn't matter, and a camera that whips or loses the leader.
+ */
+
+const countries = makeTestCountries(12);
+const SEEDS = ["smooth-a", "smooth-b", "smooth-c"];
+
+function config(mode: ModeId, scenario: string, seed: string, physics: Partial<SimulationConfig["physics"]> = {}): SimulationConfig {
+  const d = modeDefaults(mode);
+  return {
+    ...DEFAULT_CONFIG,
+    ...d,
+    scenario,
+    seed,
+    countries: countries.map((c) => c.cca3),
+    maxParticipants: 12,
+    physics: { ...d.physics, ...physics },
+  };
+}
+
+interface Motion {
+  sim: Simulation;
+  longestStillSeconds: number;
+  crawlRatio: number;
+  escaped: number;
+  maxStep: number;
+}
+
+/** Run a race and measure how the balls move after the gate opens. */
+function measure(cfg: SimulationConfig): Motion {
+  const sim = createSimulation(cfg, countries);
+  const start = Math.round(((sim.layout.gateOpensAt ?? 0) + 0.5) * TICK_RATE);
+  const { bounds } = sim.layout;
+  const still = new Map<number, number>();
+  let longest = 0;
+  let crawl = 0;
+  let samples = 0;
+  let escaped = 0;
+  let maxStep = 0;
+  while (sim.status !== "finished" && sim.tick < sim.maxTicks + TICK_RATE) {
+    sim.step();
+    if (sim.tick < start) continue;
+    for (const b of sim.balls) {
+      if (!b.alive) continue;
+      const speed = Math.hypot(b.vx, b.vy);
+      samples++;
+      if (speed < 2) crawl++;
+      const n = speed < 0.4 ? (still.get(b.id) ?? 0) + 1 : 0;
+      still.set(b.id, n);
+      longest = Math.max(longest, n);
+      maxStep = Math.max(maxStep, Math.hypot(b.x - b.prevX, b.y - b.prevY));
+      if (b.x < bounds.x || b.x > bounds.x + bounds.w || b.y < bounds.y - 100) escaped++;
+    }
+  }
+  return { sim, longestStillSeconds: longest / TICK_RATE, crawlRatio: crawl / Math.max(1, samples), escaped, maxStep };
+}
+
+const RACE_CASES = (["race", "marble-race"] as const).flatMap((mode) =>
+  getMode(mode).scenarios.flatMap((s) => SEEDS.map((seed) => [mode, s.id, seed] as const)),
+);
+
+describe("race physics smoothness", () => {
+  it.each(RACE_CASES)("%s / %s / %s: balls keep moving and stay on the track", (mode, scenario, seed) => {
+    const m = measure(config(mode, scenario, seed));
+    try {
+      expect(m.sim.decidedBy).toBe("physics");
+      // Anti-stall kicks in at 3 s; nothing should sit still much longer.
+      expect(m.longestStillSeconds).toBeLessThan(4);
+      // Balls spend little time crawling (< 2 px per tick ≈ 120 px/s).
+      expect(m.crawlRatio).toBeLessThan(0.12);
+      // No tunnelling through walls, no teleports: a tick never moves a ball
+      // much more than its speed cap. Contact separation against moving
+      // parts adds a little (≤ ~1.45× observed); the old double sub-step bug
+      // produced 3–4×.
+      expect(m.escaped).toBe(0);
+      expect(m.maxStep).toBeLessThanOrEqual(m.sim.config.physics.maxSpeed * 1.5);
+    } finally {
+      m.sim.destroy();
+    }
+  });
+
+  it("gravity makes races faster or slower", () => {
+    const seconds = (gravity: number) =>
+      SEEDS.reduce((sum, seed) => {
+        const sim = createSimulation(config("race", "classic", seed, { gravity }), countries);
+        const r = sim.runToEnd();
+        sim.destroy();
+        return sum + (r?.seconds ?? 0);
+      }, 0);
+    const low = seconds(0.6);
+    const normal = seconds(1);
+    const high = seconds(2);
+    expect(high).toBeLessThan(normal);
+    expect(normal).toBeLessThan(low);
+  });
+});
+
+describe("camera smoothness", () => {
+  const viewport = { width: 1080, height: 1920, content: { x: 60, y: 460, w: 850, h: 1020 } };
+
+  it.each(["follow-action", "follow-leader", "follow-group"] as CameraMode[])(
+    "%s never whips and keeps the leader in shot",
+    (mode) => {
+      const sim = createSimulation(config("race", "classic", "camera"), countries);
+      const camera = new Camera();
+      camera.options = { mode, dynamicZoom: true };
+      camera.setViewport(viewport);
+      camera.snap(sim);
+      let maxJump = 0;
+      let frames = 0;
+      let leaderVisible = 0;
+      while (sim.status !== "finished" && sim.tick < sim.maxTicks) {
+        sim.step();
+        const before = camera.worldToScreen(0, 0);
+        camera.update(sim, 1, 1 / TICK_RATE);
+        const after = camera.worldToScreen(0, 0);
+        expect(Number.isFinite(camera.pose.x + camera.pose.y + camera.pose.zoom)).toBe(true);
+        maxJump = Math.max(maxJump, Math.hypot(after.x - before.x, after.y - before.y));
+        if (sim.leader?.alive) {
+          frames++;
+          const p = camera.worldToScreen(sim.leader.x, sim.leader.y);
+          if (p.x >= 0 && p.x <= viewport.width && p.y >= 0 && p.y <= viewport.height) leaderVisible++;
+        }
+      }
+      sim.destroy();
+      // Screen content moves at most ~8% of the frame height per 1/60 s.
+      expect(maxJump).toBeLessThan(viewport.height * 0.08);
+      if (mode !== "follow-group") expect(leaderVisible / Math.max(1, frames)).toBeGreaterThan(0.95);
+    },
+  );
+});
