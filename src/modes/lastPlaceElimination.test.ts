@@ -110,8 +110,8 @@ describe("Last Place Elimination", () => {
         const field = 32 - i;
         const out = r.eliminated[0] as string;
         expect(r.safe).not.toContain(out);
-        // Everyone else crossed, unless the round hit its time limit.
-        if (game.lengths[i]! < 22) expect(r.safe).toHaveLength(field - 1);
+        // A round only ends once everyone else has crossed.
+        expect(r.safe).toHaveLength(field - 1);
       }
     });
 

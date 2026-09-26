@@ -24,7 +24,6 @@ const pct = (xs: number[], p: number) => [...xs].sort((a, b) => a - b)[Math.min(
 for (const map of listMaps()) {
   if (values.map && map.id !== values.map) continue;
   const rounds: number[] = [];
-  let limited = 0;
   let totals = 0;
   for (let s = 0; s < Number(values.seeds); s++) {
     const sim = createSimulation(
@@ -40,12 +39,11 @@ for (const map of listMaps()) {
       if (next === undefined) return;
       const seconds = (next - t) / 60;
       rounds.push(seconds);
-      if (seconds >= 24.9) limited++;
     });
     totals += result?.seconds ?? 0;
     sim.destroy();
   }
   console.log(
-    `${map.id.padEnd(8)} pace=${map.pace.join("–")}s  rounds min=${Math.min(...rounds).toFixed(1)}s p10=${pct(rounds, 0.1).toFixed(1)}s median=${pct(rounds, 0.5).toFixed(1)}s p90=${pct(rounds, 0.9).toFixed(1)}s max=${Math.max(...rounds).toFixed(1)}s  at-limit=${limited}  video≈${(totals / Number(values.seeds) / 60).toFixed(1)} min`,
+    `${map.id.padEnd(8)} pace=${map.pace.join("–")}s  rounds min=${Math.min(...rounds).toFixed(1)}s p10=${pct(rounds, 0.1).toFixed(1)}s median=${pct(rounds, 0.5).toFixed(1)}s p90=${pct(rounds, 0.9).toFixed(1)}s max=${Math.max(...rounds).toFixed(1)}s  video≈${(totals / Number(values.seeds) / 60).toFixed(1)} min`,
   );
 }

@@ -37,6 +37,14 @@ export interface GridPeg extends Vec2 {
   index: number;
   /** Half-embedded in a side wall. */
   wall: boolean;
+  /**
+   * First or last peg of a centred row: the one next to a wall. Never a
+   * bumper, and a little smaller when needed, so a ball always fits between
+   * it and the wall.
+   */
+  edge: boolean;
+  /** Radius of this peg. */
+  r: number;
 }
 
 export interface PegGrid {
@@ -70,6 +78,9 @@ export function pegGrid(options: PegGridOptions): PegGrid {
   }
 
   const rowHeight = pitch * (options.rowRatio ?? 0.87);
+  // Wall ↔ edge peg gap of 2.4 ball radii, without opening a lane next to
+  // the wall bumps (they cover up to pegRadius + 0.8 r from the wall).
+  const edgeRadius = Math.max(pitch / 2 - pegRadius - (1 - GRID_OVERLAP) * 2 * r + 1, Math.min(pegRadius, pitch / 2 - 2.4 * r));
   const pegs: GridPeg[] = [];
   for (let row = 0; row < options.rows; row++) {
     const y = options.top + row * rowHeight;
@@ -77,7 +88,8 @@ export function pegGrid(options: PegGridOptions): PegGrid {
     const count = odd ? columns + 1 : columns;
     for (let c = 0; c < count; c++) {
       const x = options.left + (odd ? c : c + 0.5) * pitch;
-      pegs.push({ x, y, row, index: pegs.length, wall: odd && (c === 0 || c === columns) });
+      const edge = !odd && (c === 0 || c === count - 1);
+      pegs.push({ x, y, row, index: pegs.length, wall: odd && (c === 0 || c === columns), edge, r: edge ? edgeRadius : pegRadius });
     }
   }
   return { pegs, pitch, pegRadius, rowHeight, span: (options.rows - 1) * rowHeight };

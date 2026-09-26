@@ -156,7 +156,7 @@ describe("every mode and scenario", () => {
     expect(b.fingerprint).toBe(a.fingerprint);
     expect(a.ranking.map((r) => r.place)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
     expect(a.ranking[0]?.cca3).toBe(a.winner.cca3);
-  });
+  }, 60_000);
 });
 
 describe("custom tracks", () => {
@@ -189,11 +189,12 @@ describe("golden fingerprints (cross-engine determinism)", () => {
   // say so: old seeds will replay differently from then on.
   const GOLDEN: Record<string, string> = {
     "last-country-standing": "44bfad49:AJX:2731",
-    // Updated with the corridor-free modules and the new Plinko board.
-    race: "fdd1d011:ABX:1812",
-    "elimination-drop": "75e41fc7:AXX:2097",
-    "marble-race": "018f47a3:APX:2048",
-    "last-place-elimination": "6182f74f:ACX:15569",
+    // Updated with the corridor-free modules, the new Plinko board, roomier
+    // pegs next to the walls and Elimination Drop's bigger boxes.
+    race: "fadae5df:AHX:1681",
+    "elimination-drop": "10495099:AQX:1559",
+    "marble-race": "4b67ac4d:AQX:2171",
+    "last-place-elimination": "d942afdc:AVX:15621",
   };
   const golden = makeTestCountries(24);
 

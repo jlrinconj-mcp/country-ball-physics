@@ -43,3 +43,28 @@ describe("Elimination Drop Plinko", () => {
     }
   }, 30_000);
 });
+
+describe("Elimination Drop boxes", () => {
+  it.each(scenarios)("%s: no surviving ball is left sitting in a red box", (scenario) => {
+    const sim = createSimulation(
+      { ...DEFAULT_CONFIG, ...modeDefaults("elimination-drop"), scenario, seed: "boxes", countries: countries.map((c) => c.cca3), maxParticipants: 48 },
+      countries,
+    );
+    const inRed = new Map<number, number>();
+    let worst = 0;
+    while (sim.status !== "finished" && sim.tick < 400 * TICK_RATE) {
+      sim.step();
+      for (const b of sim.balls) {
+        if (!b.alive) continue;
+        const red = sim.zones.some((z) => z.kind === "eliminate" && z.contains(b.x, b.y, b.radius));
+        const ticks = red ? (inRed.get(b.id) ?? 0) + 1 : 0;
+        inRed.set(b.id, ticks);
+        worst = Math.max(worst, ticks);
+      }
+    }
+    sim.destroy();
+    expect(sim.status).toBe("finished");
+    // Landing in a red box eliminates within a moment; nobody lingers there alive.
+    expect(worst / TICK_RATE).toBeLessThan(1);
+  }, 30_000);
+});

@@ -20,9 +20,10 @@ const INTRO = 1.6;
 const FINALS_INTRO = 2.4;
 /** Outcome on screen before the next round. */
 const RESULT = 1.4;
-/** A round that isn't decided by then eliminates whoever is furthest behind. */
-const ROUND_LIMIT = 22;
+/** A ball that hasn't advanced for this long gets a kick… */
 const STALL_TICKS = 3 * TICK_RATE;
+/** …and after this long it drops through whatever holds it (tracks only). */
+const RESCUE_TICKS = 7 * TICK_RATE;
 const GO_SECONDS = 0.8;
 /** How many of the stragglers the camera keeps in shot. */
 const FIGHT = 3;
@@ -38,7 +39,7 @@ export const lastPlaceElimination: ModeDefinition = {
   // Soft bounces (as in Elimination Drop) so peg maps flow instead of
   // bouncing balls back up: rounds stay short.
   recommendedPhysics: { gravity: 1.6, maxSpeed: 18, restitution: 0.45 },
-  defaultDuration: 900,
+  defaultDuration: 3600,
 
   autoBallRadius(count, scenario) {
     // Arenas are smaller than a track's width: a little less fill.
@@ -75,8 +76,10 @@ interface Course {
   /** Progress value of a ball that made it. */
   readonly length: number;
   safe(ball: CountryBall): boolean;
-  /** Left the world some other way (counts as last). */
+  /** Left the world some other way: it goes back to the start. */
   lost(ball: CountryBall): boolean;
+  /** Stuck for good: let it drop through the scenery (tracks only). */
+  readonly rescue: boolean;
   spawn: SpawnSpec;
   /** Starting velocity for a fresh placement (arenas start moving). */
   launch(random: Random): { vx: number; vy: number };
@@ -99,6 +102,7 @@ function trackCourse(sim: Simulation): Course {
     length: path.length,
     safe: (b) => finishZones.some((z) => z.contains(b.x, b.y, b.radius)),
     lost: (b) => b.x < bounds.x - 100 || b.x > bounds.x + bounds.w + 100 || b.y > bounds.y + bounds.h + 300,
+    rescue: true,
     spawn: sim.layout.spawn,
     launch: () => ({ vx: 0, vy: 0 }),
     close: () => gate.close(),
@@ -137,6 +141,8 @@ function arenaCourse(sim: Simulation, arena: NonNullable<MapDefinition["arena"]>
     length: edge,
     safe: (b) => distance(b) > edge + b.radius,
     lost: (b) => b.y > sim.layout.bounds.h + 200,
+    // Gaps keep widening, so everyone gets out: no shortcuts through a ring.
+    rescue: false,
     spawn: sim.layout.spawn,
     launch: (random) => {
       const angle = random.float(0, Math.PI * 2);
@@ -181,6 +187,7 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
   const eliminated: CountryBall[] = [];
   const best = new Map<number, number>();
   const stalled = new Map<number, number>();
+  const stuckSince = new Map<number, number>();
   let loser: CountryBall | null = null;
   let fieldAtStart = total;
 
@@ -212,13 +219,15 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
 
   const rounds = new RoundManager(sim, {
     intro: (round) => (round === 1 ? FIRST_INTRO : sim.aliveCount <= 5 ? FINALS_INTRO : INTRO),
-    limit: ROUND_LIMIT,
+    // A round ends when everyone but one has crossed, never on the clock.
+    limit: Infinity,
     result: RESULT,
     onSetup(round) {
       course.close();
       safe.length = 0;
       best.clear();
       stalled.clear();
+      stuckSince.clear();
       loser = null;
       const field = sim.aliveBalls;
       fieldAtStart = field.length;
@@ -237,11 +246,7 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
     onStart() {
       course.open();
     },
-    onLimit() {
-      const order = running();
-      const last = order[order.length - 1];
-      if (last) decide(last);
-    },
+    onLimit() {},
   });
 
   const antiStall = (ball: CountryBall) => {
@@ -249,6 +254,12 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
     if (p > (best.get(ball.id) ?? -Infinity) + 4) {
       best.set(ball.id, p);
       stalled.set(ball.id, 0);
+      stuckSince.set(ball.id, sim.tick);
+      return;
+    }
+    if (course.rescue && sim.tick - (stuckSince.get(ball.id) ?? sim.tick) >= RESCUE_TICKS) {
+      stuckSince.set(ball.id, sim.tick);
+      sim.phase(ball, 0.5);
       return;
     }
     const ticks = (stalled.get(ball.id) ?? 0) + 1;
@@ -276,8 +287,10 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
           continue;
         }
         if (course.lost(ball)) {
-          decide(ball);
-          return;
+          // Knocked out of the world somehow: back to the start, not out.
+          const p = spawnPoints(spawn, 1, sim.ballRadius, seeded.fork(`lost-${sim.tick}-${ball.id}`))[0];
+          if (p) sim.teleport(ball, p.x, p.y);
+          continue;
         }
         if (rounds.elapsed > 0.5) antiStall(ball);
       }

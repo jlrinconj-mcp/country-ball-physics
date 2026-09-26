@@ -15,7 +15,7 @@ import { TrackEditor } from "./TrackEditor";
 import { Button, Field, Section, Segmented, Select, Slider, Toggle } from "./ui";
 
 export const CAMERA_OPTIONS: { value: CameraMode; label: string }[] = [
-  { value: "fixed", label: "Fixed" },
+  { value: "fixed", label: "Whole map" },
   { value: "follow-leader", label: "Follow leader" },
   { value: "follow-action", label: "Follow action" },
   { value: "follow-group", label: "Follow main group" },
@@ -191,7 +191,7 @@ export function ControlPanel({
         <Slider label="Ball size" value={config.physics.ballScale} min={0.5} max={1.6} step={0.05} onChange={(ballScale) => physics({ ballScale })} format={(v) => `${Math.round(v * 100)}%`} />
         <Slider label="Max speed" value={config.physics.maxSpeed} min={8} max={40} step={1} onChange={(maxSpeed) => physics({ maxSpeed })} />
         <Slider label="Chaos (random kicks)" value={config.physics.chaos} min={0} max={1} step={0.05} onChange={(chaos) => physics({ chaos })} format={(v) => `${Math.round(v * 100)}%`} />
-        <Slider label="Max duration" value={config.maxDuration} min={10} max={900} step={5} onChange={(maxDuration) => onConfig({ ...config, maxDuration })} format={(v) => `${v}s`} />
+        <Slider label="Max duration" value={config.maxDuration} min={10} max={3600} step={10} onChange={(maxDuration) => onConfig({ ...config, maxDuration })} format={(v) => `${v}s`} />
       </Section>
 
       <Section title="Video">

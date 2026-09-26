@@ -18,7 +18,7 @@ describe("map registry", () => {
   });
 
   it("keeps every map's measured pace inside the 8–15 s target (p10 ≥ 7.5)", () => {
-    for (const map of listMaps()) {
+    for (const map of listMaps().filter((m) => !m.epic)) {
       expect(map.pace[0]).toBeGreaterThanOrEqual(7.5);
       expect(map.pace[1]).toBeLessThanOrEqual(15);
     }

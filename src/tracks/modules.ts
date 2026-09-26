@@ -34,7 +34,7 @@ function gridObstacles(ctx: ModuleContext, grid: PegGrid, options: { bumpers?: S
   const bumperR = Math.max(grid.pegRadius, Math.min(Math.max(grid.pegRadius * 1.4, 24), grid.pitch - grid.pegRadius - 2 * r * 1.9));
   return grid.pegs.map((p) => {
     const bumper = options.style === "bumper" || (options.bumpers?.has(p.index) ?? false);
-    const radius = bumper && options.style !== "bumper" ? bumperR : grid.pegRadius;
+    const radius = bumper && options.style !== "bumper" ? bumperR : p.r;
     return solid(`${ctx.id}-${bumper ? "bumper" : "peg"}-${p.index}`, bumper ? "bumper" : "peg", [{ kind: "circle", x: p.x, y: p.y, r: radius }], {
       restitution: bumper ? 0.9 : 0.6,
       kick: bumper ? (options.kick ?? 5 + ctx.difficulty * 3) : undefined,
@@ -92,7 +92,7 @@ const drop: TrackModuleDefinition = {
     // A few rows of big, widely spaced pegs: quick, bouncy, no free lanes.
     const rows = ctx.random.int(2, 3);
     const grid = pegGrid({ left: ctx.left, right: ctx.right, top: ctx.y + 100, rows, ballRadius: ctx.ballRadius, pitch: 8.5, minPitch: 110, maxPitch: 280, minPegRadius: 16 });
-    const slots = grid.pegs.filter((p) => !p.wall).map((p) => p.index);
+    const slots = grid.pegs.filter((p) => !p.wall && !p.edge).map((p) => p.index);
     const bumpers = new Set(ctx.random.sample(slots, 1 + Math.round(ctx.difficulty)));
     return { height: 100 + grid.span + 150, obstacles: gridObstacles(ctx, grid, { bumpers }) };
   },
@@ -114,7 +114,7 @@ const zigzag: TrackModuleDefinition = {
     const obstacles: ObstacleSpec[] = [];
     const route: Vec2[] = [{ x: (left + right) / 2, y }];
     for (let i = 0; i < n; i++) {
-      const slope = random.float(0.3, 0.4);
+      const slope = random.float(0.42, 0.5);
       const top = y + 80 + i * spacing;
       const from = { x: side < 0 ? left - 10 : right + 10, y: top };
       const to = { x: from.x - side * length * Math.cos(slope), y: top + length * Math.sin(slope) };
@@ -216,7 +216,7 @@ const pinball: TrackModuleDefinition = {
     const { random } = ctx;
     const rows = random.int(3, 5);
     const grid = pegGrid({ left: ctx.left, right: ctx.right, top: ctx.y + 110, rows, ballRadius: ctx.ballRadius, pitch: 6.5, minPitch: 90 });
-    const slots = grid.pegs.filter((p) => !p.wall).map((p) => p.index);
+    const slots = grid.pegs.filter((p) => !p.wall && !p.edge).map((p) => p.index);
     const bumpers = new Set(random.sample(slots, 2 + Math.round(ctx.difficulty * 2)));
     return { height: 110 + grid.span + 140, obstacles: gridObstacles(ctx, grid, { bumpers, kick: 6 + ctx.difficulty * 3 }) };
   },
@@ -530,7 +530,14 @@ const trapdoors: TrackModuleDefinition = {
           }),
         );
       });
-      obstacles.push(solid(`${ctx.id}-post-${k}`, "wall", [{ kind: "rect", x: cx, y: hy + spacing / 2 - 20, w: post, h: spacing - 40 }]));
+      obstacles.push(
+        solid(`${ctx.id}-post-${k}`, "wall", [
+          { kind: "rect", x: cx, y: hy + spacing / 2 - 20, w: post, h: spacing - 40 },
+          // A pointed cap over the two post hinges: with both flaps hanging
+          // open, nothing can sit balanced on top of the post.
+          { kind: "polygon", points: [{ x: cx - post / 2 - 6, y: hy + 4 }, { x: cx, y: hy - 1.4 * r }, { x: cx + post / 2 + 6, y: hy + 4 }] },
+        ]),
+      );
     }
     return { height: 80 + (levels - 1) * spacing + flap + 3 * r + 60, obstacles };
   },
@@ -589,19 +596,26 @@ const bowl: TrackModuleDefinition = {
     const { left, right, ballRadius: r } = ctx;
     const cx = (left + right) / 2;
     const th = 18;
-    const radius = (right - left) / 2 - 2;
+    // Funnel endurance in 2D: balls swing across a bowl until they're slow
+    // enough to drop through the hole at the bottom. Each half is an arc
+    // centred a little past the middle, so the floor still slopes down into
+    // the hole at its lip: nothing can sit balanced on the edge.
+    const offset = 150;
+    const radius = (right - left) / 2 - 2 + offset;
     const cy = ctx.y + 90;
-    // Funnel endurance in 2D: balls swing across a U until they're slow enough
-    // to drop through the hole at the bottom.
-    const hole = (5 * r) / radius;
+    const half = 2.5 * r;
+    const lipAngle = Math.acos((half + offset) / radius);
+    const lipY = cy + radius * Math.sin(lipAngle);
     const pegR = Math.max(12, 1.05 * r);
-    const pegY = cy + radius - 2.4 * r - pegR;
-    const arc = (start: number, end: number): ShapeSpec => ({ kind: "arc", x: cx, y: cy, radius, thickness: th, start, end, resolution: 160 });
+    // High above the hole: it splits the straight drop without choking the
+    // throat when a crowd arrives together.
+    const pegY = lipY - 4.2 * r - pegR;
+    const arc = (x: number, start: number, end: number): ShapeSpec => ({ kind: "arc", x, y: cy, radius, thickness: th, start, end, resolution: 200 });
     return {
-      height: cy - ctx.y + radius + th + 4 * r + 60,
+      height: lipY - ctx.y + th + 4 * r + 60,
       obstacles: [
-        solid(`${ctx.id}-bowl-l`, "funnel", [arc(Math.PI / 2 + hole / 2, Math.PI - 0.02)], { friction: 0.005, restitution: 0.3 }),
-        solid(`${ctx.id}-bowl-r`, "funnel", [arc(0.02, Math.PI / 2 - hole / 2)], { friction: 0.005, restitution: 0.3 }),
+        solid(`${ctx.id}-bowl-l`, "funnel", [arc(cx + offset, Math.PI - lipAngle, Math.PI - 0.02)], { friction: 0.005, restitution: 0.3 }),
+        solid(`${ctx.id}-bowl-r`, "funnel", [arc(cx - offset, 0.02, lipAngle)], { friction: 0.005, restitution: 0.3 }),
         solid(`${ctx.id}-peg`, "peg", [{ kind: "circle", x: cx, y: pegY, r: pegR }], { restitution: 0.6 }),
       ],
     };

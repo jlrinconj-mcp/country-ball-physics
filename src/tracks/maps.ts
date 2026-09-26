@@ -27,6 +27,11 @@ export interface MapDefinition {
   length?: number;
   difficulty: number;
   /**
+   * Long-format map for big tournaments and finals: exempt from the 8–15 s
+   * round target (its rounds run about a minute).
+   */
+  epic?: boolean;
+  /**
    * Typical round length (p10–p90, seconds) of Last Place Elimination with 32
    * countries: intro + race + result. Measured with `npm run maps`; the
    * target for every map is 8–15 s.
@@ -58,7 +63,7 @@ export const MAPS: readonly MapDefinition[] = [
     // Every switchback stops a ball against the wall (~2 s a ramp): one module.
     sequence: ["zigzag"],
     difficulty: 0.4,
-    pace: [11.5, 14.5],
+    pace: [10.5, 12],
   },
   {
     id: "funnel",
@@ -131,9 +136,9 @@ export const MAPS: readonly MapDefinition[] = [
     id: "vortex",
     label: "Vortex",
     description: "Funnel endurance: balls swing across a bowl until they slow down enough to drop through.",
-    sequence: ["bowl"],
+    sequence: ["bowl", "bowl"],
     difficulty: 0.5,
-    pace: [7.5, 12],
+    pace: [8.5, 10.5],
   },
   {
     id: "hurdles",
@@ -150,6 +155,15 @@ export const MAPS: readonly MapDefinition[] = [
     slots: [["hammers", "crushers", "trapdoors", "tumbler", "bowl", "hurdles"], ["drop", "funnel", "plinko"]],
     difficulty: 0.6,
     pace: [10, 15],
+  },
+  {
+    id: "grand-gauntlet",
+    label: "Grand Gauntlet (ultra)",
+    description: "The ultra-long obstacle course for big tournaments: twelve obstacles in one run, about 40 s a round.",
+    sequence: ["hammers", "drop", "crushers", "spinner", "trapdoors", "pinball", "tumbler", "funnel", "hurdles", "wheel", "bowl", "plinko"],
+    difficulty: 0.7,
+    epic: true,
+    pace: [36, 44],
   },
   {
     id: "ring",

@@ -1,0 +1,8 @@
+{
+  "name": "Grand Gauntlet Championship",
+  "seed": "grand-gauntlet-2026",
+  "countries": "all",
+  "size": 32,
+  "heatMode": "last-place-elimination",
+  "heatScenario": "grand-gauntlet"
+}

@@ -5,7 +5,7 @@ import { Obstacle } from "@/entities/Obstacle";
 import { Zone } from "@/entities/Zone";
 import { withDeterministicMath } from "./deterministicMath";
 import { EventBus } from "./events";
-import { PhysicsWorld, SUBSTEPS, TICK_DT, TICK_RATE } from "./physicsWorld";
+import { CATEGORY, PhysicsWorld, SUBSTEPS, TICK_DT, TICK_RATE } from "./physicsWorld";
 import { createRandom, hashString, type Random } from "./random";
 import { spawnPoints } from "./spawn";
 import type { ModeId, ObstacleSpec, PhysicsSettings, SimulationConfig, Vec2, WorldLayout } from "./types";
@@ -177,6 +177,8 @@ export class Simulation {
 
   private readonly bodyOwners = new Map<number, CountryBall | Obstacle>();
   private readonly pendingKicks: { ball: CountryBall; normal: Vec2; kick: number }[] = [];
+  /** Balls passing through the scenery, with ticks left (see `phase`). */
+  private readonly phasing = new Map<CountryBall, number>();
   private leaderCandidate: CountryBall | null = null;
   private leaderCandidateTicks = 0;
   private finishCount = 0;
@@ -287,6 +289,7 @@ export class Simulation {
     for (const obstacle of this.obstacles) obstacle.syncFromBody();
 
     this.tick++;
+    this.updatePhasing();
 
     if (this.status === "running") {
       this.rules.afterStep();
@@ -413,6 +416,35 @@ export class Simulation {
     this.bodyOwners.set(body.id, ball);
     ball.syncFromBody();
     ball.savePrevious();
+  }
+
+  /**
+   * Last-resort unsticking: the ball ignores the scenery (it still hits
+   * other balls) for `seconds`, dropping straight out of whatever trapped
+   * it, then collides normally again.
+   */
+  phase(ball: CountryBall, seconds: number): void {
+    const body = ball.body;
+    if (!body || this.phasing.has(ball)) return;
+    body.collisionFilter.mask = CATEGORY.ball;
+    // Straight down: it must not drift through a side wall meanwhile.
+    PhysicsWorld.setVelocity(body, { x: 0, y: Math.max(3, body.velocity.y) });
+    this.phasing.set(ball, Math.round(seconds * TICK_RATE));
+  }
+
+  isPhasing(ball: CountryBall): boolean {
+    return this.phasing.has(ball);
+  }
+
+  private updatePhasing(): void {
+    for (const [ball, ticks] of this.phasing) {
+      if (ticks > 1 && ball.body) {
+        this.phasing.set(ball, ticks - 1);
+        continue;
+      }
+      this.phasing.delete(ball);
+      if (ball.body) ball.body.collisionFilter.mask = CATEGORY.ball | CATEGORY.solid;
+    }
   }
 
   /** Apply an instantaneous velocity change to a live ball. */

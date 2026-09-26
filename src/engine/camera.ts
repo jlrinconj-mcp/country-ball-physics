@@ -150,9 +150,18 @@ export class Camera {
     const mode = this.options.mode;
 
     const centreOfFocus = { x: focus.x + focus.w / 2, y: focus.y + focus.h / 2, zoom: fitAll };
-    if (mode === "fixed" || sim.rules.cameraFixed?.()) return centreOfFocus;
-
     const balls = sim.balls.filter((b) => b.active);
+    if (mode === "fixed" || sim.rules.cameraFixed?.()) {
+      // Whole map. When it fits the frame at full width, show all of it;
+      // a tall track would shrink to a sliver with empty space either side,
+      // so instead fill the width and scroll with the main group.
+      if (focus.h * fitWidth <= content.h * 1.08) return centreOfFocus;
+      const group = trimmed(balls, 0.15);
+      const y = group.length ? boundsOf(group, alpha) : null;
+      const cy = y ? y.y + y.h / 2 : sim.winner ? sim.winner.y : focus.y + focus.h / 2;
+      return this.clamp({ x: focus.x + focus.w / 2, y: cy, zoom: fitWidth }, bounds);
+    }
+
     const chosen = sim.rules.cameraSubjects?.();
     if (chosen && chosen.length === 0 && sim.status === "running") return this.pose;
     if (balls.length === 0) {

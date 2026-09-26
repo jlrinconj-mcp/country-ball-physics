@@ -11,7 +11,6 @@ const WIDTH = 1080;
 const LEFT = 40;
 const RIGHT = WIDTH - 40;
 const GATE_DELAY = 2.9;
-const ROUND_LIMIT = 13;
 const SETTLE_TICKS = Math.round(1.7 * TICK_RATE);
 
 interface Board {
@@ -21,8 +20,9 @@ interface Board {
 }
 
 function slotCount(ballRadius: number): number {
-  const n = Math.floor((RIGHT - LEFT) / (ballRadius * 2 * 2.5));
-  const clamped = Math.max(3, Math.min(9, n));
+  // Wide boxes (3.5 ball widths or more): a landing ball stays in its box.
+  const n = Math.floor((RIGHT - LEFT) / (ballRadius * 2 * 3.5));
+  const clamped = Math.max(3, Math.min(7, n));
   return clamped % 2 ? clamped : clamped - 1;
 }
 
@@ -52,7 +52,7 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
   const boardTop = gateY + 110;
   const rows = scenario === "tall" ? 10 : 7;
   const grid = pegGrid({ left: LEFT, right: RIGHT, top: boardTop, rows, ballRadius: r, pitch: 6, minPitch: 90 });
-  const inner = grid.pegs.filter((p) => !p.wall).map((p) => p.index);
+  const inner = grid.pegs.filter((p) => !p.wall && !p.edge).map((p) => p.index);
   const bumpers = new Set(random.sample(inner, scenario === "bumpers" ? 8 : 3));
   // Bumpers are a little bigger than pegs, never closing a gap.
   const bumperR = Math.max(grid.pegRadius, Math.min(grid.pegRadius * 1.3, grid.pitch - grid.pegRadius - 2 * r * 1.9));
@@ -67,7 +67,7 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
     obstacles.push({
       id: `peg-${p.index}`,
       style: bumper ? "bumper" : "peg",
-      shapes: [{ kind: "circle", x: p.x, y: p.y, r: bumper ? bumperR : grid.pegRadius }],
+      shapes: [{ kind: "circle", x: p.x, y: p.y, r: bumper ? bumperR : p.r }],
       restitution: bumper ? 0.9 : 0.55,
       kick: bumper ? 5 : 0,
     });
@@ -89,10 +89,11 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
   const slotW = width / slots;
   const slotTop = boardTop + grid.span + grid.pegRadius + 2.6 * r + 40;
   // Deep enough that a slot catching twice its share never overflows (balls
-  // piled above a slot would never count as landed).
+  // piled above a slot would never count as landed), and walled well above
+  // the pile so nothing bounces from one box into another.
   const slotRow = Math.max(1, Math.floor((slotW - 14) / (2 * r)));
   const stack = Math.ceil((2 * count) / slots / slotRow);
-  const floorY = slotTop + Math.max(260, r * 9, stack * 2 * r * 0.9 + 2 * r);
+  const floorY = slotTop + Math.max(300, r * 11, stack * 2 * r * 0.9 + 5 * r);
   for (let i = 1; i < slots; i++) {
     const x = LEFT + i * slotW;
     obstacles.push({
@@ -102,7 +103,8 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
         { kind: "rect", x, y: (slotTop + floorY) / 2, w: 14, h: floorY - slotTop },
         { kind: "circle", x, y: slotTop, r: 9 },
       ],
-      restitution: 0.3,
+      restitution: 0.05,
+      friction: 0.1,
     });
   }
   for (let i = 0; i < slots; i++) {
@@ -117,7 +119,8 @@ function buildBoard(scenario: string, count: number, ballRadius: number, random:
     { id: "wall-left", style: "wall", shapes: [{ kind: "rect", x: LEFT - 20, y: floorY / 2, w: 40, h: floorY + 200 }] },
     { id: "wall-right", style: "wall", shapes: [{ kind: "rect", x: RIGHT + 20, y: floorY / 2, w: 40, h: floorY + 200 }] },
     { id: "lid", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: -20, w: WIDTH, h: 40 }] },
-    { id: "floor", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: floorY + 20, w: WIDTH, h: 40 }] },
+    // A dead floor: balls land in their box instead of bouncing back out.
+    { id: "floor", style: "wall", shapes: [{ kind: "rect", x: WIDTH / 2, y: floorY + 20, w: WIDTH, h: 40 }], restitution: 0, friction: 0.3 },
   );
 
   const height = floorY + 40;
@@ -169,6 +172,8 @@ export const eliminationDrop: ModeDefinition = {
 
 function createDropRules(sim: Simulation): ModeRules {
   const slots = sim.zones.filter((z) => z.id.startsWith("slot-"));
+  const first = slots[0]?.spec.shape;
+  const slotTop = first && first.kind === "rect" ? first.y : 0;
   const gates = sim.obstacles.filter((o) => o.id.startsWith("gate-"));
   const spawn = sim.layout.spawn;
   const rounds = sim.random.fork("rounds");
@@ -228,21 +233,23 @@ function createDropRules(sim: Simulation): ModeRules {
       const out: CountryBall[] = [];
       for (const ball of sim.balls) {
         if (!ball.alive || safe.has(ball.id)) continue;
+        // A ball is judged once it has landed in a box: settled inside it, or
+        // so deep that no bounce can carry it over the wall into the next one.
         const zone = inSlot(ball);
-        if (zone?.kind === "safe") safe.add(ball.id);
-        else if (zone?.kind === "eliminate") out.push(ball);
-        else antiStall(ball);
+        const depth = ball.y - slotTop;
+        const landed = zone && (depth > 3 * ball.radius || (depth > ball.radius && Math.hypot(ball.vx, ball.vy) < 2.5));
+        if (landed && zone.kind === "safe") safe.add(ball.id);
+        else if (landed && zone.kind === "eliminate") out.push(ball);
+        else if (!zone) antiStall(ball);
       }
       if (out.length) eliminateKeepingOne(sim, out, { fall: false });
       if (sim.status !== "running") return;
 
+      // The round ends when every ball has landed, never on the clock.
       const alive = sim.aliveBalls;
-      const elapsed = (sim.tick - roundStart) / TICK_RATE;
-      const resolved = alive.every((b) => safe.has(b.id));
-      if (resolved || elapsed > ROUND_LIMIT) {
+      if (alive.every((b) => safe.has(b.id))) {
         settledAt ??= sim.tick;
         if (sim.tick - settledAt < SETTLE_TICKS) return;
-        if (!resolved) eliminateKeepingOne(sim, alive.filter((b) => !safe.has(b.id)));
         if (sim.status === "running") startRound();
       }
     },
@@ -282,10 +289,12 @@ function createDropRules(sim: Simulation): ModeRules {
     }
     const ticks = (stalled.get(ball.id) ?? 0) + 1;
     stalled.set(ball.id, ticks);
-    if (ticks > 2 * TICK_RATE) {
+    if (ticks % (2 * TICK_RATE) === 0) sim.nudge(ball, forces.float(-6, 6), forces.float(-6, -2));
+    // Still stuck after three kicks: it drops through whatever holds it.
+    if (ticks >= 7 * TICK_RATE) {
       stalled.set(ball.id, 0);
       lastY.delete(ball.id);
-      sim.nudge(ball, forces.float(-6, 6), forces.float(-6, -2));
+      sim.phase(ball, 0.4);
     }
   }
 
