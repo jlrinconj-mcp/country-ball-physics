@@ -26,7 +26,7 @@ export function drawHud(
   const width = format.width;
   const now = Math.max(0, (sim.tick - 1 + frame.alpha) * TICK_DT);
   const info = sim.rules.hud();
-  const textWidth = width - 2 * Math.max(format.safe.left, format.safe.right);
+  const textWidth = centredWidth(format);
   const unit = Math.min(width, format.height) / 1080;
   const shadow = theme.textShadow;
 
@@ -217,13 +217,21 @@ function startLineY(frame: Frame, safe: { y: number; h: number }): number | null
   return y >= safe.y && y <= safe.y + safe.h ? y : null;
 }
 
+/**
+ * Widest text centred on the screen that stays inside the safe area. The
+ * margins are asymmetric (Shorts/Reels buttons sit on the right), so this is
+ * narrower than the safe area itself.
+ */
+function centredWidth(format: FormatSpec): number {
+  return format.width - 2 * Math.max(format.safe.left, format.safe.right);
+}
+
 function drawTitle(ctx: CanvasRenderingContext2D, title: { text: string; sub?: string }, y: number, format: FormatSpec, unit: number, theme: RenderTheme): void {
-  const safe = safeRect(format);
   drawText(ctx, title.text, format.width / 2, y, {
     size: 120 * unit,
     weight: 900,
     color: theme.text,
-    maxWidth: safe.w - 40 * unit,
+    maxWidth: centredWidth(format),
     shadow: theme.textShadow,
     stroke: theme.id === "midnight" ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.75)",
     strokeWidth: 10 * unit,
@@ -233,7 +241,7 @@ function drawTitle(ctx: CanvasRenderingContext2D, title: { text: string; sub?: s
       size: 46 * unit,
       weight: 900,
       color: DANGER,
-      maxWidth: safe.w - 40 * unit,
+      maxWidth: centredWidth(format),
       letterSpacing: 3 * unit,
       stroke: theme.id === "midnight" ? "rgba(0,0,0,0.6)" : "rgba(255,255,255,0.8)",
       strokeWidth: 8 * unit,
@@ -302,12 +310,11 @@ function drawFeed(
 
 /** Big centred text (countdown, "GO!"): pops in at the start of each second. */
 function drawBanner(ctx: CanvasRenderingContext2D, text: string, format: FormatSpec, unit: number, theme: RenderTheme, now: number, y: number): void {
-  const safe = safeRect(format);
   const phase = now % 1;
   const scale = 1 + Math.max(0, 0.25 - phase) * 1.6;
   ctx.globalAlpha = Math.min(1, 0.35 + (1 - phase));
   drawText(ctx, text, format.width / 2, y, {
-    maxWidth: safe.w,
+    maxWidth: centredWidth(format),
     size: 220 * unit * scale,
     weight: 900,
     color: theme.accent,
@@ -362,7 +369,7 @@ function drawWinner(
     size: 92 * unit,
     weight: 900,
     color: theme.text,
-    maxWidth: safe.w,
+    maxWidth: centredWidth(format),
     shadow: theme.textShadow,
   });
   if (decidedBy === "timeout") {
