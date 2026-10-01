@@ -6,11 +6,13 @@ import { makeTestCountries } from "@/engine/testing";
 import type { SimulationConfig } from "@/engine/types";
 import { listMaps } from "@/tracks/maps";
 import { createSimulation, modeDefaults } from "./index";
-import { roundTitle } from "./lastPlaceElimination";
+import { roundCut, roundTitle } from "./lastPlaceElimination";
 
 const countries = makeTestCountries(32);
 
-function config(map: string, seed: string): SimulationConfig {
+type Elimination = "batch" | "single";
+
+function config(map: string, seed: string, elimination: Elimination = "batch"): SimulationConfig {
   return {
     ...DEFAULT_CONFIG,
     ...modeDefaults("last-place-elimination"),
@@ -18,7 +20,15 @@ function config(map: string, seed: string): SimulationConfig {
     seed,
     countries: countries.map((c) => c.cca3),
     maxParticipants: 32,
+    elimination,
   };
+}
+
+/** How many go out each round, from `field` countries down to one. */
+function cuts(field: number, elimination: Elimination = "batch"): number[] {
+  const out: number[] = [];
+  for (let n = field; n > 1; n -= out.at(-1) as number) out.push(roundCut(n, elimination));
+  return out;
 }
 
 interface Round {
@@ -34,8 +44,8 @@ interface Round {
 }
 
 /** Run a whole game and record it round by round. */
-function play(map: string, seed: string) {
-  const sim = createSimulation(config(map, seed), countries);
+function play(map: string, seed: string, elimination: Elimination = "batch") {
+  const sim = createSimulation(config(map, seed, elimination), countries);
   const rounds: Round[] = [];
   const spawn = sim.layout.spawn;
   let inBox = true;
@@ -66,6 +76,16 @@ function play(map: string, seed: string) {
   return { result, rounds, lengths, inBox, parkedWithBody };
 }
 
+describe("roundCut", () => {
+  it("takes the back third of a big field, then one a round from the final five", () => {
+    expect(cuts(32)).toEqual([11, 7, 5, 3, 1, 1, 1, 1, 1]);
+    expect(cuts(8)).toEqual([3, 1, 1, 1, 1]);
+    expect(cuts(6)).toEqual([1, 1, 1, 1, 1]);
+    expect(cuts(195)).toHaveLength(13);
+    expect(cuts(32, "single")).toEqual(Array(31).fill(1));
+  });
+});
+
 describe("roundTitle", () => {
   it("counts down the finals", () => {
     expect(roundTitle(1, 32)).toBe("ROUND 1");
@@ -85,33 +105,38 @@ describe("Last Place Elimination", () => {
     expect(listMaps().map((m) => m.id)).toEqual(expect.arrayContaining(["plinko", "pinball", "zigzag", "funnel", "spinner", "drop", "marble"]));
   });
 
-  // Plinko is the reference map; Funnel is a second, very different course.
-  describe.each(["plinko", "funnel"])("%s with 32 countries", (map) => {
+  // Plinko is the reference map (Shorts pace: several out a round); Funnel is
+  // a second, very different course, one out a round (long format).
+  describe.each([
+    ["plinko", "batch"],
+    ["funnel", "single"],
+  ] as const)("%s with 32 countries (%s)", (map, elimination) => {
     let game: ReturnType<typeof play>;
+    const expected = cuts(32, elimination);
     beforeAll(() => {
-      game = play(map, `lpe-${map}`);
+      game = play(map, `lpe-${map}`, elimination);
     }, 60_000);
 
-    it("plays down to a single winner, one elimination per round", () => {
+    it("plays down to a single winner, the right number out each round", () => {
       const { result, rounds } = game;
       expect(result.decidedBy).toBe("physics");
-      expect(rounds).toHaveLength(31);
-      expect(rounds.map((r) => r.eliminated.length)).toEqual(Array(31).fill(1));
+      expect(rounds).toHaveLength(expected.length);
+      expect(rounds.map((r) => r.eliminated.length)).toEqual(expected);
       expect(result.ranking.map((r) => r.place)).toEqual(Array.from({ length: 32 }, (_, i) => i + 1));
       expect(result.ranking.filter((r) => r.status === "eliminated")).toHaveLength(31);
       expect(result.ranking[0]).toMatchObject({ cca3: result.winner.cca3, status: "alive" });
-      // The first one out is 32nd, the last one out is 2nd.
+      // The first one out (furthest behind in round 1) is 32nd, the last one out is 2nd.
       expect(result.ranking[31]?.cca3).toBe(rounds[0]?.eliminated[0]);
-      expect(result.ranking[1]?.cca3).toBe(rounds[30]?.eliminated[0]);
+      expect(result.ranking[1]?.cca3).toBe(rounds.at(-1)?.eliminated.at(-1));
     });
 
-    it("eliminates the one country that didn't cross the line", () => {
+    it("eliminates exactly the countries that didn't cross the line", () => {
+      let field = 32;
       for (const [i, r] of game.rounds.entries()) {
-        const field = 32 - i;
-        const out = r.eliminated[0] as string;
-        expect(r.safe).not.toContain(out);
-        // A round only ends once everyone else has crossed.
-        expect(r.safe).toHaveLength(field - 1);
+        for (const out of r.eliminated) expect(r.safe).not.toContain(out);
+        // A round only ends once all the safe places are taken.
+        expect(r.safe).toHaveLength(field - (expected[i] as number));
+        field -= expected[i] as number;
       }
     });
 
@@ -173,7 +198,7 @@ describe("Last Place Elimination on every map", () => {
     const a = run();
     const b = run();
     expect(a.result.decidedBy).toBe("physics");
-    expect(a.rounds).toBe(9);
+    expect(a.rounds).toBe(cuts(10).length);
     expect(a.result.ranking.filter((r) => r.status === "eliminated")).toHaveLength(9);
     expect(b.result.fingerprint).toBe(a.result.fingerprint);
   }, 30_000);

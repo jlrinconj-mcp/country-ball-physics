@@ -6,6 +6,7 @@
  *   npm run generate -- --mode=random --count=50 --seed=batch --lang=es
  *   npm run generate -- --mode=marble-race --frames=30          # PNG sequence
  *   npm run generate -- --mode=race --video                      # needs ffmpeg on PATH
+ *   npm run generate -- --mode=last-place-elimination --elimination=single   # one out a round (long)
  */
 import { spawn, spawnSync } from "node:child_process";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
@@ -38,6 +39,7 @@ const { values } = parseArgs({
     "no-thumbnail": { type: "boolean", default: false },
     frames: { type: "string" },
     video: { type: "boolean", default: false },
+    elimination: { type: "string" },
   },
 });
 
@@ -65,6 +67,7 @@ for (let i = 0; i < count; i++) {
     format: values.format as VideoFormat,
     participants: values.participants ? Number(values.participants) : undefined,
     tournamentSize: values.size ? (Number(values.size) as TournamentSize) : undefined,
+    elimination: values.elimination === "single" ? "single" : values.elimination === "batch" ? "batch" : undefined,
   };
   const plan = planSimulation(request, countries);
   const generated = runPlan(plan, countries, language);

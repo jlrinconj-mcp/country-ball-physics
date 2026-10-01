@@ -195,7 +195,7 @@ describe("golden fingerprints (cross-engine determinism)", () => {
     race: "fadae5df:AHX:1681",
     "elimination-drop": "10495099:AQX:1559",
     "marble-race": "4b67ac4d:AQX:2171",
-    "last-place-elimination": "d942afdc:AVX:15621",
+    "last-place-elimination": "bdfe9cf7:ABX:5204",
   };
   const golden = makeTestCountries(24);
 

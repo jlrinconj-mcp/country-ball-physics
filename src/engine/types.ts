@@ -171,4 +171,11 @@ export interface SimulationConfig {
    * procedural recipe; a custom `track` still wins over it.
    */
   map?: string;
+  /**
+   * Last Place Elimination: "batch" (default) knocks out the back third of a
+   * big field each round until the final five, so 32 countries play in about
+   * a minute and a half (Shorts/Reels); "single" takes one per round, for
+   * long formats such as live streams.
+   */
+  elimination?: "batch" | "single";
 }

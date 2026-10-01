@@ -54,6 +54,19 @@ function mapFor(scenario: string, mapId?: string): MapDefinition {
   return findMap(mapId) ?? findMap(scenario) ?? (MAPS[0] as MapDefinition);
 }
 
+/** From this many countries on, one goes out per round. */
+const FINALS = 5;
+
+/**
+ * How many go out in a round that starts with `field` countries: the back
+ * third while the field is big ("batch"), never going below the final five,
+ * then one a round. 32 → 21 → 14 → 9 → 6 → 5 → 4 → 3 → 2 → 1.
+ */
+export function roundCut(field: number, elimination: "batch" | "single" = "batch"): number {
+  if (elimination === "single" || field <= FINALS + 1) return 1;
+  return Math.max(1, Math.min(field - FINALS, Math.ceil(field / 3)));
+}
+
 /** Round banner: "ROUND 4", then "FINAL 5", "FINAL 4", "FINAL 3", "FINAL ROUND". */
 export function roundTitle(round: number, remaining: number): string {
   if (remaining <= 2) return "FINAL ROUND";
@@ -77,8 +90,12 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
   const best = new Map<number, number>();
   const stalled = new Map<number, number>();
   const stuckSince = new Map<number, number>();
-  let loser: CountryBall | null = null;
+  /** The round is decided (its losers are out). */
+  let decided = false;
   let fieldAtStart = total;
+  /** Countries going out this round. */
+  let cut = 1;
+  const elimination = sim.config.elimination ?? "batch";
 
   const progressOf = (b: CountryBall) => course.progress(b);
 
@@ -95,11 +112,28 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
 
   const running = () => sim.activeBalls.sort(compare);
 
-  const decide = (ball: CountryBall) => {
-    if (loser) return;
-    loser = ball;
-    sim.eliminate(ball);
-    eliminated.unshift(ball);
+  /**
+   * The fight for the last safe place: the best-placed ball that would go out
+   * if the round ended now, then its neighbours either side of the cut. With
+   * one out a round that's simply the last few.
+   */
+  const bubble = () => {
+    const order = running();
+    const edge = Math.max(0, order.length - cut);
+    return [edge, edge - 1, edge + 1, edge - 2]
+      .map((i) => order[i])
+      .filter((b): b is CountryBall => !!b)
+      .slice(0, FIGHT);
+  };
+
+  /** Everyone still on the course is out, the furthest behind placed last. */
+  const decide = (losers: CountryBall[]) => {
+    if (decided) return;
+    decided = true;
+    for (const ball of [...losers].sort(compare).reverse()) {
+      sim.eliminate(ball);
+      eliminated.unshift(ball);
+    }
     previous.clear();
     safe.forEach((b, i) => previous.set(b.id, i));
     if (sim.aliveCount === 1) sim.declareWinner(sim.aliveBalls[0]);
@@ -117,9 +151,10 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
       best.clear();
       stalled.clear();
       stuckSince.clear();
-      loser = null;
+      decided = false;
       const field = sim.aliveBalls;
       fieldAtStart = field.length;
+      cut = roundCut(field.length, elimination);
       if (round === 1) return;
       // A fresh seeded grid position for everyone, every round.
       const random = seeded.fork(`spawn-${round}`);
@@ -162,11 +197,11 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
   const rules: ModeRules = {
     beforeStep() {
       rounds.update();
-      course.update(rounds.racing && !loser ? rounds.elapsed : null);
+      course.update(rounds.racing && !decided ? rounds.elapsed : null);
     },
 
     afterStep() {
-      if (!rounds.racing || loser) return;
+      if (!rounds.racing || decided) return;
       course.kick();
       const crossing: CountryBall[] = [];
       for (const ball of sim.balls) {
@@ -184,15 +219,14 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
         if (rounds.elapsed > 0.5) antiStall(ball);
       }
       crossing.sort(compare);
-      // Everyone crossing on the same tick: the one furthest behind is last.
-      const behind = sim.activeBalls.length - crossing.length === 0 ? crossing.pop() : undefined;
-      for (const ball of crossing) {
+      // Only so many places are safe: crossing on the same tick as the last
+      // safe one, the ones further behind are out.
+      const places = fieldAtStart - cut - safe.length;
+      for (const ball of crossing.slice(0, places)) {
         sim.park(ball);
         safe.push(ball);
       }
-      if (behind) return decide(behind);
-      const left = sim.activeBalls;
-      if (left.length === 1 && left[0]) decide(left[0]);
+      if (safe.length >= fieldAtStart - cut) decide(sim.activeBalls);
     },
 
     rank() {
@@ -224,13 +258,12 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
     // Arenas are watched whole: the escapes happen all around the rim.
     cameraFixed: () => !!map.arena,
 
-    cameraMoment: () => (rounds.phase === "intro" ? "setup" : rounds.racing && !loser ? "live" : "hold"),
+    cameraMoment: () => (rounds.phase === "intro" ? "setup" : rounds.racing && !decided ? "live" : "hold"),
 
     cameraSubjects() {
       if (rounds.phase === "intro") return sim.activeBalls;
-      if (!rounds.racing || loser) return [];
-      const order = running();
-      return order.slice(-FIGHT).reverse();
+      if (!rounds.racing || decided) return [];
+      return bubble();
     },
 
     hud(): ModeHud {
@@ -240,22 +273,23 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
       const t = rounds.elapsed;
       // The title card owns the intro; "GO!" when the gate opens.
       const banner = rounds.racing && t < GO_SECONDS ? "GO!" : undefined;
-      const last = rounds.racing && !loser ? running().at(-1) : undefined;
+      const last = rounds.racing && !decided ? bubble()[0] : undefined;
+      const out = cut > 1 ? `LAST ${cut} ARE ELIMINATED` : "LAST PLACE IS ELIMINATED";
       return {
         headline: "LAST PLACE IS ELIMINATED",
         counterLabel: "COUNTRIES LEFT",
         counterValue: alive,
         showLeader: false,
-        status: rounds.racing ? `${title} · ${safe.length}/${fieldAtStart - 1} SAFE` : title,
+        status: rounds.racing ? `${title} · ${safe.length}/${fieldAtStart - cut} SAFE` : title,
         banner,
         title: intro
           ? {
-              ...(rounds.round === 1 ? { text: `${total} COUNTRIES`, sub: "LAST PLACE IS ELIMINATED" } : { text: title, sub: `${alive} COUNTRIES LEFT` }),
+              ...(rounds.round === 1 ? { text: `${total} COUNTRIES`, sub: out } : { text: title, sub: cut > 1 ? out : `${alive} COUNTRIES LEFT` }),
               // In an arena the middle of the rings is where there's room.
               ...(map.arena ? { worldY: RING_CENTER.y - 40 } : {}),
             }
           : undefined,
-        featured: last && sim.activeBalls.length > 1 ? { label: "LAST PLACE", ball: last, tone: "danger" } : undefined,
+        featured: last && sim.activeBalls.length > 1 ? { label: cut > 1 ? "DANGER" : "LAST PLACE", ball: last, tone: "danger" } : undefined,
         eliminated,
       };
     },

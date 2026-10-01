@@ -43,6 +43,8 @@ export interface GenerateRequest {
   map?: string;
   /** Time limit override, seconds. */
   maxDuration?: number;
+  /** Last Place Elimination: several out a round (default) or one. */
+  elimination?: "batch" | "single";
 }
 
 export interface SimulationPlan {
@@ -114,6 +116,7 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
     ...(tournament ? { tournament } : {}),
     ...(track ? { track } : {}),
     ...(request.map && mode !== "last-place-elimination" ? { map: request.map } : {}),
+    ...(request.elimination ? { elimination: request.elimination } : {}),
   };
   const display: DisplayOptions = {
     ...DEFAULT_DISPLAY,

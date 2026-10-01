@@ -108,6 +108,17 @@ export function ControlPanel({
           onChange={(id) => onConfig({ ...config, scenario: id })}
         />
         {scenario && <p className="text-xs text-zinc-500">{scenario.description}</p>}
+        {config.mode === "last-place-elimination" && (
+          <Segmented
+            label="Eliminations"
+            value={config.elimination ?? "batch"}
+            options={[
+              { value: "batch", label: "Shorts (fast)" },
+              { value: "single", label: "One per round" },
+            ]}
+            onChange={(elimination) => onConfig({ ...config, elimination })}
+          />
+        )}
         {config.mode !== "last-place-elimination" && (
           <>
             <Select

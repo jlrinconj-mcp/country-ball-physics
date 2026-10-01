@@ -27,7 +27,8 @@ for (const map of listMaps()) {
   let totals = 0;
   for (let s = 0; s < Number(values.seeds); s++) {
     const sim = createSimulation(
-      { ...DEFAULT_CONFIG, ...modeDefaults("last-place-elimination"), scenario: map.id, seed: `maps-${s}`, countries: countries.map((c) => c.cca3), maxParticipants: count },
+      // One out a round: every round races the whole field, the slowest case.
+      { ...DEFAULT_CONFIG, ...modeDefaults("last-place-elimination"), scenario: map.id, seed: `maps-${s}`, countries: countries.map((c) => c.cca3), maxParticipants: count, elimination: "single" },
       countries,
     );
     const starts: number[] = [];
