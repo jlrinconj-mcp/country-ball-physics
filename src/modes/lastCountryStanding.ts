@@ -93,6 +93,9 @@ export const lastCountryStanding: ModeDefinition = {
         return rankSurvival(sim.balls, (a, b) => distance(a) - distance(b));
       },
 
+      // Staying in is winning: a boost pulls towards the middle.
+      boostDirection: (b) => ({ x: CENTER.x - b.x, y: CENTER.y - b.y }),
+
       hud() {
         return {
           headline: "WHICH COUNTRY WILL WIN?",
@@ -170,6 +173,9 @@ function lastOnTrackRules(sim: Simulation): ModeRules {
     progress: (b) => (b.alive ? -progress(b) : -1e7 + (b.eliminatedTick ?? 0)),
     leaderActive: () => opened,
     cameraMoment: () => (opened ? "live" : "setup"),
+
+    // Reaching the bottom is out: a boost is a hop back up.
+    boostDirection: () => (opened ? { x: 0, y: -1 } : null),
 
     hud() {
       const t = sim.time;

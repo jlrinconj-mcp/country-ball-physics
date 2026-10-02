@@ -178,4 +178,17 @@ export interface SimulationConfig {
    * long formats such as live streams.
    */
   elimination?: "batch" | "single";
+  /**
+   * Inputs from outside the simulation (live viewers' boosts), each applied
+   * at its tick. A live game records them, so replaying its config with them
+   * reproduces it exactly (e.g. to record it as a video afterwards).
+   */
+  inputs?: SimInput[];
+}
+
+/** A viewer input: give a country a push at `tick` (before that tick's physics). */
+export interface SimInput {
+  tick: number;
+  kind: "boost";
+  cca3: string;
 }

@@ -327,6 +327,9 @@ function createDropRules(sim: Simulation): ModeRules {
       }
     },
 
+    // A hop: another bounce through the pegs, another shot at a safe box.
+    boostDirection: () => ((sim.tick - roundStart) / TICK_RATE < GATE_DELAY ? null : { x: 0, y: -1 }),
+
     cameraMoment() {
       if ((sim.tick - roundStart) / TICK_RATE < GATE_DELAY) return "setup";
       return settledAt === null ? "live" : "hold";

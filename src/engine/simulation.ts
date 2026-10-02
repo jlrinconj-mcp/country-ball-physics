@@ -8,7 +8,7 @@ import { EventBus } from "./events";
 import { CATEGORY, PhysicsWorld, SUBSTEPS, TICK_DT, TICK_RATE } from "./physicsWorld";
 import { createRandom, hashString, type Random } from "./random";
 import { spawnPoints } from "./spawn";
-import type { ModeId, ObstacleSpec, PhysicsSettings, SimulationConfig, Vec2, WorldLayout } from "./types";
+import type { ModeId, ObstacleSpec, PhysicsSettings, SimInput, SimulationConfig, Vec2, WorldLayout } from "./types";
 
 export type CameraMode = "fixed" | "follow-leader" | "follow-action" | "follow-group" | "leader-last";
 
@@ -91,6 +91,12 @@ export interface ModeRules {
    * screen). Default: "live".
    */
   cameraMoment?(): "setup" | "live" | "hold";
+  /**
+   * Which way a boost pushes a ball (a unit vector): along the course, out of
+   * an arena… Default: a hop up and to one side. Return null when boosts
+   * don't apply right now (e.g. before a start).
+   */
+  boostDirection?(ball: CountryBall): Vec2 | null;
   hud(): ModeHud;
   /** maxDuration reached: the mode must declare a winner. */
   onTimeout(): void;
@@ -111,6 +117,8 @@ export interface SimulationEvents {
   roundStarted: { round: number; remaining: number; tick: number };
   /** A ball left the world without being decided (e.g. safe this round). */
   countryParked: { ball: CountryBall; tick: number };
+  /** A viewer input gave a ball a push. */
+  boosted: { ball: CountryBall; tick: number };
 }
 
 export type DecidedBy = "physics" | "timeout";
@@ -142,7 +150,7 @@ export interface SimulationResult {
 
 export interface TimelineEntry {
   tick: number;
-  type: "eliminated" | "finished" | "leader" | "winner";
+  type: "eliminated" | "finished" | "leader" | "winner" | "boost";
   cca3: string;
 }
 
@@ -152,6 +160,8 @@ const LEADER_HOLD_TICKS = 12;
 const LEADER_WARMUP_TICKS = 30;
 /** Seconds an eliminated ball keeps falling (visual only). */
 export const GHOST_LIFETIME = 2.5;
+/** Speed a boost adds, px per tick (the speed cap still applies). */
+const BOOST_SPEED = 8;
 
 /**
  * One deterministic run: physics world + entities + mode rules. It has no
@@ -181,6 +191,9 @@ export class Simulation {
   /** Bumped by rules when the scene jumps (new round): cameras cut instead of panning. */
   cameraCut = 0;
   readonly timeline: TimelineEntry[] = [];
+  /** Every input applied or queued, in tick order (see `SimulationConfig.inputs`). */
+  readonly inputs: SimInput[];
+  private nextInput = 0;
 
   private readonly bodyOwners = new Map<number, CountryBall | Obstacle>();
   private readonly pendingKicks: { ball: CountryBall; normal: Vec2; kick: number }[] = [];
@@ -196,6 +209,7 @@ export class Simulation {
     readonly definition: ModeDefinition,
   ) {
     this.random = createRandom(config.seed);
+    this.inputs = [...(config.inputs ?? [])].sort((a, b) => a.tick - b.tick);
     this.scenario = definition.scenarios.some((s) => s.id === config.scenario)
       ? config.scenario
       : (definition.scenarios[0]?.id ?? "default");
@@ -269,7 +283,10 @@ export class Simulation {
     for (const ball of this.balls) ball.savePrevious();
     for (const obstacle of this.obstacles) obstacle.savePrevious();
 
-    if (this.status === "running") this.rules.beforeStep?.();
+    if (this.status === "running") {
+      this.rules.beforeStep?.();
+      this.applyInputs();
+    }
 
     const maxSpeed = this.config.physics.maxSpeed;
     for (let s = 1; s <= SUBSTEPS; s++) {
@@ -451,6 +468,35 @@ export class Simulation {
       }
       this.phasing.delete(ball);
       if (ball.body) ball.body.collisionFilter.mask = CATEGORY.ball | CATEGORY.solid;
+    }
+  }
+
+  /**
+   * Queue a live input for the coming tick and record it, so the run can be
+   * replayed with `config.inputs`. Returns false if it can't apply (finished
+   * game, unknown or out country).
+   */
+  input(kind: SimInput["kind"], cca3: string): boolean {
+    const ball = this.balls.find((b) => b.code === cca3);
+    if (this.status === "finished" || !ball?.active) return false;
+    this.inputs.push({ tick: this.tick, kind, cca3 });
+    return true;
+  }
+
+  private applyInputs(): void {
+    while (this.nextInput < this.inputs.length && (this.inputs[this.nextInput] as SimInput).tick <= this.tick) {
+      const input = this.inputs[this.nextInput++] as SimInput;
+      const ball = this.balls.find((b) => b.code === input.cca3);
+      if (!ball?.body || !ball.active) continue;
+      const direction =
+        this.rules.boostDirection === undefined
+          ? { x: this.random.fork(`boost-${this.tick}-${ball.id}`).float(-0.5, 0.5), y: -1 }
+          : this.rules.boostDirection(ball);
+      if (!direction) continue;
+      const length = Math.hypot(direction.x, direction.y) || 1;
+      this.nudge(ball, (direction.x / length) * BOOST_SPEED, (direction.y / length) * BOOST_SPEED);
+      this.timeline.push({ tick: this.tick, type: "boost", cca3: ball.code });
+      this.events.emit("boosted", { ball, tick: this.tick });
     }
   }
 

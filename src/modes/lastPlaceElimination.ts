@@ -260,6 +260,8 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
 
     cameraMoment: () => (rounds.phase === "intro" ? "setup" : rounds.racing && !decided ? "live" : "hold"),
 
+    boostDirection: (b) => (rounds.racing && !decided ? course.boost(b) : null),
+
     cameraSubjects() {
       if (rounds.phase === "intro") return sim.activeBalls;
       if (!rounds.racing || decided) return [];

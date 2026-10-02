@@ -23,6 +23,24 @@ export class CoursePath {
     this.length = total;
   }
 
+  /** Which way the route runs at a point (unit vector of the nearest segment). */
+  direction(x: number, y: number): Vec2 {
+    let best = Infinity;
+    let dir: Vec2 = { x: 0, y: 1 };
+    for (const s of this.segments) {
+      if (y < s.minY - this.band || y > s.maxY + this.band) continue;
+      const dx = s.b.x - s.a.x;
+      const dy = s.b.y - s.a.y;
+      const t = Math.max(0, Math.min(1, ((x - s.a.x) * dx + (y - s.a.y) * dy) / (s.length * s.length)));
+      const d = Math.hypot(x - (s.a.x + t * dx), y - (s.a.y + t * dy));
+      if (d <= best) {
+        best = d;
+        dir = { x: dx / s.length, y: dy / s.length };
+      }
+    }
+    return dir;
+  }
+
   /** Progress in px along the route (0 at the gate, `length` at the line). */
   progress(x: number, y: number): number {
     let best = Infinity;

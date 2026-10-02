@@ -2,6 +2,7 @@ import type { CountryBall } from "@/entities/CountryBall";
 import { TICK_DT, TICK_RATE } from "@/engine/physicsWorld";
 import type { ModeDefinition, ModeRules, Simulation } from "@/engine/simulation";
 import { createRandom } from "@/engine/random";
+import { CoursePath } from "@/tracks/coursePath";
 import { generateTrack } from "@/tracks/generator";
 import { buildMap, findMap } from "@/tracks/maps";
 import { MIDDLE_MODULES, type ModuleKind } from "@/tracks/types";
@@ -107,6 +108,8 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
   let firstFinishTick: number | null = null;
   const gate = startGate(sim);
 
+  const route = arena ? null : new CoursePath(sim.layout.path ?? [{ x: bounds.x + bounds.w / 2, y: 0 }, { x: bounds.x + bounds.w / 2, y: bounds.h }]);
+
   const progress = (b: CountryBall) =>
     b.status === "finished" ? 1e7 - (b.place ?? 0) : b.status === "eliminated" ? -1e7 + (b.eliminatedTick ?? 0) : arena ? arena.progress(b) : b.y;
   let opened = false;
@@ -176,6 +179,13 @@ export function createRaceRules(sim: Simulation, headline: string): ModeRules {
     cameraFixed: () => !!arena,
 
     cameraMoment: () => (sim.time < gateOpensAt ? "setup" : "live"),
+
+    boostDirection(b) {
+      if (sim.time < gateOpensAt) return null;
+      if (arena) return arena.boost(b);
+      const d = (route as CoursePath).direction(b.x, b.y);
+      return { x: d.x, y: d.y - 0.6 };
+    },
 
     hud() {
       const t = sim.time;

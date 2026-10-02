@@ -86,6 +86,8 @@ export interface Course {
   update(racing: number | null): void;
   /** Random kicks while racing (arenas). */
   kick(): void;
+  /** Which way a viewer's boost pushes: along the route, or out of the rings. */
+  boost(ball: CountryBall): { x: number; y: number };
 }
 
 export interface ArenaOptions {
@@ -120,6 +122,11 @@ export function trackCourse(sim: Simulation): Course {
     open: () => gate.open(),
     update: () => gate.update(),
     kick: () => {},
+    // Along the route, with a little lift so a ball resting on a ramp hops.
+    boost: (b) => {
+      const d = path.direction(b.x, b.y);
+      return { x: d.x, y: d.y - 0.6 };
+    },
   };
 }
 
@@ -175,5 +182,6 @@ export function arenaCourse(sim: Simulation, arena: ArenaId, options: ArenaOptio
       }
     },
     kick: () => chaos(0.8),
+    boost: (b) => ({ x: b.x - RING_CENTER.x, y: b.y - RING_CENTER.y }),
   };
 }
