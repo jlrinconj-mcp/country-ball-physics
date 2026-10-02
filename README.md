@@ -44,7 +44,7 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 - **Output formats:** 9:16 (1080×1920), plus 4:5, 1:1 and 16:9, with platform safe areas (TikTok/Reels/Shorts overlays) and a toggle to show them.
 - **Minimal HUD on the canvas:** headline, counter, event line ("FRANCE IS OUT"), leader, timer, countdown and round banners, optional live ranking, winner and champion screens.
 - **Audio:** synthesized impacts, bounces, bumpers, eliminations, lead changes, finishes, countdown and victory. Pooled buffers, per-sound cooldowns, a collision budget and a voice cap.
-- **Record video:** one click replays the simulation from tick 0 and downloads a full-resolution MP4 (or WebM), with sound.
+- **Record video:** one click replays the simulation from tick 0 and downloads a full-resolution MP4 (or WebM), always with sound (even with sound effects off for live viewing).
 - **Content factory:** `generateSimulation({ mode, countries, track, seed, format })` plus a batch CLI that writes metadata, titles, captions, hashtags and thumbnails.
 - **Country selector:** search, presets (All, continents, Random 16/32/64), continent and region filters, manual picks, exclusions and territories.
 - **Determinism check:** each run shows a result fingerprint, and replaying a config reports whether the result was identical.
@@ -114,7 +114,8 @@ npm run generate -- --count=50 --mode=random --seed=batch     # batch-001 … ba
 npm run generate -- --mode=tournament --countries=all --size=32 --seed=cup-2026
 npm run generate -- --mode=marble-race --countries=asia --lang=es
 npm run generate -- --mode=race --countries=COL,ARG,BRA --frames=30   # PNG sequence for ffmpeg
-npm run generate -- --mode=race --video                               # MP4, needs ffmpeg on PATH
+npm run generate -- --mode=race --video                               # MP4 with sound, needs ffmpeg on PATH
+npm run generate -- --mode=race --video --no-audio                    # silent MP4
 ```
 
 Each run writes `output/runs/<seed>/metadata.json` (request, config, result, tournament bracket, metadata) and `thumbnail.png`, and appends a line to `output/runs/index.jsonl`. Titles never contain the winner; the spoiler lives in `metadata.result`.
@@ -206,7 +207,7 @@ src/
     rounds.ts          RoundManager: intro → racing → result → next round
   tracks/              generateTrack(), the 14 track modules, peg grid, corridor detector, map registry, course path
   render/              Canvas renderer, HUD, flag atlas, formats, safe areas, themes
-  audio/               Synthesized, rate-limited sound engine
+  audio/               Synthesized, rate-limited sounds: Web Audio engine (live, recordings) and offline mixer (CLI videos, same sounds on simulated time)
   content/             planSimulation, generateSimulation, metadata templates
   runtime/             SimulationController (engine ↔ canvas ↔ React), video recorder
   components/          React UI (control panel, track editor, selector, live panel)
@@ -256,7 +257,7 @@ Countries are sorted by ISO code before seeding, so the order you picked them in
 - [x] **Phase 3:** Track editor, Tournament, Marble Race, Elimination Drop, audio, advanced HUD (countdown, rounds, champion)
 - [ ] **Phase 4, content factory:**
   - [x] `generateSimulation()`, batch CLI, metadata (EN/ES), thumbnails, browser video export
-  - [x] Headless frame sequences (`--frames`) and MP4 via ffmpeg (`--video`)
+  - [x] Headless frame sequences (`--frames`, with `audio.wav`) and MP4 with sound via ffmpeg (`--video`)
   - [ ] Bundle a video encoder so headless MP4 needs no system ffmpeg
   - [ ] Intro/outro cards, music beds, caption burn-in
   - [ ] Upload/scheduling integrations

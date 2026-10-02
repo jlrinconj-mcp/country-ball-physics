@@ -21,6 +21,9 @@ export class HeadlessRenderer {
   private readonly camera = new Camera();
   private sim: Simulation | null = null;
   private hud: HudTracker | null = null;
+  /** Called around every simulation step (e.g. to drive a soundtrack). */
+  beforeStep?: () => void;
+  afterStep?: () => void;
 
   constructor(
     private readonly display: DisplayOptions,
@@ -51,9 +54,17 @@ export class HeadlessRenderer {
     const sim = this.sim;
     if (!sim) throw new Error("No simulation attached");
     while (sim.tick < tick) {
+      this.beforeStep?.();
       sim.step();
+      this.afterStep?.();
       this.camera.update(sim, 1, 1 / TICK_RATE);
     }
+  }
+
+  /** Stereo pan (-1…1) for a world x, from where it is on screen. */
+  panOf(x: number): number {
+    const width = FORMATS[this.display.format].width;
+    return Math.max(-1, Math.min(1, ((this.camera.worldToScreen(x, 0).x / width) * 2 - 1) * 0.7));
   }
 
   png(overlay?: HudOverlay): Buffer {

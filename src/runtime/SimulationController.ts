@@ -103,8 +103,7 @@ export class SimulationController {
   private baseConfig: SimulationConfig | null = null;
   private overlay: HudOverlay | undefined;
   private readonly audio = new AudioEngine();
-  private detachAudio: (() => void) | null = null;
-  private lastBanner: string | undefined;
+  private sounds: { afterStep(): void; detach(): void } | null = null;
   private recorder: CanvasRecorder | null = null;
   private fps = 0;
   private replay: ControllerSnapshot["replay"] = null;
@@ -230,6 +229,9 @@ export class SimulationController {
   async record(): Promise<void> {
     const config = this.baseConfig;
     if (!config || !this.canvas || this.recorder || !CanvasRecorder.supported()) return;
+    // Videos always get sound (the click that starts a recording lets the
+    // browser start audio), even with sound effects off for live viewing.
+    if (!this.audio.enabled) await this.audio.enable();
     await this.load(config, this.countries);
     const canvas = this.canvas;
     if (!canvas) return;
@@ -246,6 +248,10 @@ export class SimulationController {
     const blob = await recorder.stop();
     this.recorder = null;
     this.loop.speed = this.display.speed;
+    if (!this.display.audio && this.audio.enabled) {
+      this.audio.disable();
+      this.bindAudio();
+    }
     this.applyViewport();
     this.publish(true);
     if (blob.size > 0) {
@@ -284,7 +290,6 @@ export class SimulationController {
       : undefined;
     this.bindEvents(sim);
     this.bindAudio();
-    this.lastBanner = undefined;
     this.applyViewport();
     this.camera.snap(sim);
     this.loop.paused = false;
@@ -311,24 +316,17 @@ export class SimulationController {
       if (since > OUTRO_TICKS) return false;
     }
     sim.step();
-    if (this.audio.enabled && sim.status === "running") {
-      // Countdown beeps follow the HUD banner ("3", "2", "1", "GO!").
-      const banner = sim.rules.hud().banner;
-      if (banner !== this.lastBanner && banner && !banner.startsWith("ROUND")) {
-        this.audio.play(banner === "GO!" ? "go" : "countdown");
-      }
-      this.lastBanner = banner;
-    }
+    this.sounds?.afterStep();
     return true;
   }
 
   private bindAudio(): void {
-    this.detachAudio?.();
-    this.detachAudio = null;
+    this.sounds?.detach();
+    this.sounds = null;
     const sim = this.sim;
     if (!sim || !this.audio.enabled) return;
     const width = viewportFor(this.display).width;
-    this.detachAudio = this.audio.attach(sim, (x) => ((this.camera.worldToScreen(x, 0).x / width) * 2 - 1) * 0.7);
+    this.sounds = this.audio.attach(sim, (x) => ((this.camera.worldToScreen(x, 0).x / width) * 2 - 1) * 0.7);
   }
 
   private render(alpha: number, dt: number): void {
@@ -367,8 +365,8 @@ export class SimulationController {
   }
 
   private disposeSimulation(): void {
-    this.detachAudio?.();
-    this.detachAudio = null;
+    this.sounds?.detach();
+    this.sounds = null;
     for (const off of this.simListeners) off();
     this.simListeners.length = 0;
     this.hud?.dispose();

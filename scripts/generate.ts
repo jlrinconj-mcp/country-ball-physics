@@ -5,11 +5,13 @@
  *   npm run generate -- --mode=tournament --countries=all --seed=cup-2026
  *   npm run generate -- --mode=random --count=50 --seed=batch --lang=es
  *   npm run generate -- --mode=marble-race --frames=30          # PNG sequence
- *   npm run generate -- --mode=race --video                      # needs ffmpeg on PATH
+ *   npm run generate -- --mode=race --video                      # MP4 with sound; needs ffmpeg on PATH
+ *   npm run generate -- --mode=race --video --no-audio           # silent MP4
  *   npm run generate -- --mode=last-place-elimination --elimination=single   # one out a round (long)
  */
 import { spawn, spawnSync } from "node:child_process";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { OfflineMix } from "../src/audio/offlineMix";
 import { parseArgs } from "node:util";
 import { runPlan, type GeneratedSimulation } from "../src/content/generateSimulation";
 import type { Language } from "../src/content/metadata";
@@ -39,6 +41,7 @@ const { values } = parseArgs({
     "no-thumbnail": { type: "boolean", default: false },
     frames: { type: "string" },
     video: { type: "boolean", default: false },
+    "no-audio": { type: "boolean", default: false },
     elimination: { type: "string" },
   },
 });
@@ -83,6 +86,7 @@ for (let i = 0; i < count; i++) {
     const fps = Number(values.frames ?? 30);
     const written = await renderSequence(generated, countries, dir, fps, values.video);
     files.push(values.video ? "video.mp4" : `frames/ (${written} @ ${fps}fps)`);
+    if (!values.video && !values["no-audio"]) files.push("audio.wav");
   }
 
   const record = {
@@ -145,8 +149,17 @@ async function renderSequence(generated: GeneratedSimulation, all: Country[], di
   const frames = Math.ceil(totalTicks / ticksPerFrame);
   const overlay = generated.tournament ? { status: "FINAL", winnerTitle: "CHAMPION" } : undefined;
 
+  // The soundtrack, mixed on simulated time while the frames render.
+  const mix = values["no-audio"] ? null : new OfflineMix();
+  if (mix) {
+    const cues = mix.attach(sim, (x) => renderer.panOf(x));
+    renderer.beforeStep = () => (mix.time = (sim.tick + 1) / TICK_RATE);
+    renderer.afterStep = () => cues.afterStep();
+  }
+  const silent = mix ? `${dir}/video.silent.mp4` : `${dir}/video.mp4`;
+
   const ffmpeg = video
-    ? spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(fps), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", `${dir}/video.mp4`], { stdio: ["pipe", "inherit", "inherit"] })
+    ? spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(fps), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", silent], { stdio: ["pipe", "inherit", "inherit"] })
     : null;
   if (!video) await mkdir(`${dir}/frames`, { recursive: true });
 
@@ -160,14 +173,22 @@ async function renderSequence(generated: GeneratedSimulation, all: Country[], di
     }
   }
   sim.destroy();
+  if (mix) await writeFile(`${dir}/audio.wav`, mix.wav(frames / fps));
   if (ffmpeg) {
     ffmpeg.stdin.end();
-    await new Promise((resolve, reject) => ffmpeg.on("close", (code) => (code === 0 ? resolve(null) : reject(new Error(`ffmpeg exited with ${code}`)))));
+    await exited(ffmpeg);
+    if (mix) {
+      await exited(spawn("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-i", `${dir}/audio.wav`, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", `${dir}/video.mp4`], { stdio: "inherit" }));
+      await rm(silent);
+      await rm(`${dir}/audio.wav`);
+    }
   } else {
-    await writeFile(
-      `${dir}/frames/README.txt`,
-      `Assemble with:\nffmpeg -framerate ${fps} -i frames/%05d.png -c:v libx264 -pix_fmt yuv420p -crf 18 video.mp4\n`,
-    );
+    const audio = mix ? " -i audio.wav -c:a aac -b:a 192k -shortest" : "";
+    await writeFile(`${dir}/frames/README.txt`, `Assemble with:\nffmpeg -framerate ${fps} -i frames/%05d.png${audio} -c:v libx264 -pix_fmt yuv420p -crf 18 video.mp4\n`);
   }
   return frames;
+}
+
+function exited(process: ReturnType<typeof spawn>): Promise<void> {
+  return new Promise((resolve, reject) => process.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}`)))));
 }
