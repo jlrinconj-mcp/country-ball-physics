@@ -80,6 +80,32 @@ it("refuses tokens bound to a different destination", async () => {
   await expect(new SocialPublisher("tiktok", { ...TEST_ENV, TIKTOK_OPEN_ID: "other" }).advance(context)).rejects.toThrow("Account changed");
 });
 
+it("retries an interrupted Meta transfer using the same container", async () => {
+  const variant = job.variants[0]!, delivery = variant.deliveries.find(d => d.platform === "instagram")!;
+  const context = { file: store.path(job.id, variant.file), artifact: artifactFor(job, variant), variant, delivery, checkpoint: () => store.save(job) };
+  fixture.control.rejectInstagramUploadOnce = true;
+  await expect(fixture.publishers.instagram.advance(context)).rejects.toThrow("503");
+  fixture.control.confirmed = true;
+  await expect(fixture.publishers.instagram.advance(context)).resolves.toMatchObject({ id: "ig-post" });
+  expect(fixture.calls.filter(p => p.endsWith("/ig-account/media")).length).toBe(1);
+  expect(fixture.calls.filter(p => p.includes("/ig-api-upload/")).length).toBe(2);
+});
+
+it("recovers a lost acknowledgement midway through a multi-chunk TikTok upload", async () => {
+  const variant = job.variants[0]!, delivery = variant.deliveries.find(d => d.platform === "tiktok")!;
+  const artifact = artifactFor(job, variant);
+  const bytes = Buffer.alloc(21 * 1024 ** 2, "video");
+  await writeFile(store.path(job.id, variant.file), bytes); await store.seal(job, artifact);
+  const context = { file: store.path(job.id, variant.file), artifact, variant, delivery, checkpoint: () => store.save(job) };
+  fixture.control.loseTikTokChunkResponseOnce = true;
+  await expect(fixture.publishers.tiktok.advance(context)).rejects.toThrow();
+  expect(delivery.ticket.nextChunk).toBe("0");
+  await expect(fixture.publishers.tiktok.advance(context)).resolves.toBeNull();
+  expect(fixture.files.tiktok!.equals(bytes)).toBe(true);
+  expect(fixture.calls.filter(p => p.includes("/video/init/")).length).toBe(1);
+  expect(fixture.calls.filter(p => p.includes("upload.us.tiktokapis.com/video")).length).toBe(2);
+});
+
 it("redacts tokens from logs and does not expose signed upload tickets in receipts", async () => {
   await deliver(store, job, fixture.publishers);
   const logs = await readFile(resolve(store.root, "logs", "2026-10-02.jsonl"), "utf8");

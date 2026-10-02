@@ -48,13 +48,13 @@ describe("safe retention and durable queue", () => {
     await deliver(store, job, publishers);
     expect(job.deleteAfter).toBe(new Date(now.getTime() + RETENTION_MS).toISOString());
     now = new Date(now.getTime() + RETENTION_MS - 1);
-    await cleanup(store, job, publishers);
+    await cleanup(store, job);
     expect(await readFile(store.path(job.id, "first.mp4"), "utf8")).toContain("generated");
     now = new Date(now.getTime() + 1);
     // A fresh process restores durable state and can clean without the original worker.
     store = new Store(store.root, () => now); await store.init();
     const restored = (await store.jobs())[0]!;
-    await cleanup(store, restored, publishers);
+    await cleanup(store, restored);
     expect(restored.state).toBe("deleted");
     await expect(readFile(store.path(job.id, "first.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readFile(manual, "utf8")).toBe("manual");
@@ -69,7 +69,7 @@ describe("safe retention and durable queue", () => {
     expect(job.deleteAfter).toBeUndefined();
     now = new Date(now.getTime() + 10 * RETENTION_MS);
     job.deleteAfter = new Date(0).toISOString(); // A forged timer is insufficient.
-    await cleanup(store, job, publishers);
+    await cleanup(store, job);
     expect(await readFile(store.path(job.id, "first.mp4"), "utf8")).toContain("generated");
   });
 
@@ -78,7 +78,7 @@ describe("safe retention and durable queue", () => {
     await deliver(store, job, { ...publishers, facebook: { advance: async () => null } });
     expect(job.variants[1]!.deliveries[0]!.state).toBe("confirming");
     now = new Date(now.getTime() + 2 * RETENTION_MS);
-    await cleanup(store, job, publishers);
+    await cleanup(store, job);
     expect(await readFile(store.path(job.id, "second.mp4"), "utf8")).toContain("generated");
   });
 
@@ -95,17 +95,21 @@ describe("safe retention and durable queue", () => {
     expect(restored.state).toBe("retained");
   });
 
-  it("preserves files when remote publication cannot be rechecked at cleanup", async () => {
-    const job = await prepared(); await deliver(store, job, publishers);
+  it("cleans confirmed files after 24 hours without depending on token renewal", async () => {
+    const job = await prepared();
+    const remote = vi.fn(success.advance);
+    await deliver(store, job, { ...publishers, tiktok: { advance: remote } });
+    remote.mockRejectedValue(new Error("expired token"));
     now = new Date(now.getTime() + RETENTION_MS);
-    await cleanup(store, job, { ...publishers, tiktok: { advance: async () => { throw new Error("expired token"); } } });
-    expect(await readFile(store.path(job.id, "first.mp4"), "utf8")).toContain("generated");
+    await cleanup(store, job);
+    await expect(readFile(store.path(job.id, "first.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(remote).toHaveBeenCalledTimes(1);
   });
 
   it("preserves a generated file edited manually after upload", async () => {
     const job = await prepared(); await deliver(store, job, publishers);
     await writeFile(store.path(job.id, "first.mp4"), "manual edits");
-    now = new Date(now.getTime() + RETENTION_MS); await cleanup(store, job, publishers);
+    now = new Date(now.getTime() + RETENTION_MS); await cleanup(store, job);
     expect(await readFile(store.path(job.id, "first.mp4"), "utf8")).toBe("manual edits");
     expect(job.state).toBe("retained");
   });
@@ -115,7 +119,7 @@ describe("safe retention and durable queue", () => {
     const target = store.path(job.id, "first.mp4");
     const replacement = resolve(directory, "replacement.mp4");
     await writeFile(replacement, await readFile(target)); await rename(replacement, target);
-    now = new Date(now.getTime() + RETENTION_MS); await cleanup(store, job, publishers);
+    now = new Date(now.getTime() + RETENTION_MS); await cleanup(store, job);
     expect(await readFile(target, "utf8")).toContain("generated");
   });
 
@@ -154,7 +158,7 @@ describe("safe retention and durable queue", () => {
   it("requires the confirmation to match the generated checksum", async () => {
     const job = await prepared(); await deliver(store, job, publishers);
     job.variants[0]!.deliveries[0]!.confirmedSha256 = "wrong";
-    now = new Date(now.getTime() + RETENTION_MS); await cleanup(store, job, publishers);
+    now = new Date(now.getTime() + RETENTION_MS); await cleanup(store, job);
     expect(await readFile(store.path(job.id, "first.mp4"), "utf8")).toContain("generated");
   });
 
@@ -173,7 +177,7 @@ describe("safe retention and durable queue", () => {
     now = new Date(now.getTime() + RETENTION_MS);
     job.artifacts[0]!.deletionPendingAt = now.toISOString(); await store.save(job);
     await rm(store.path(job.id, "first.mp4"));
-    await cleanup(store, job, publishers);
+    await cleanup(store, job);
     expect(job.state).toBe("deleted");
     expect(await readFile(store.path(job.id, "job.json"), "utf8")).toContain("deletionPendingAt");
   });

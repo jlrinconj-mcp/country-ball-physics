@@ -17,7 +17,7 @@ export const TEST_ENV = {
 export async function apiFixture() {
   const files: Partial<Record<Platform, Buffer>> = {};
   const calls: string[] = [];
-  const control = { confirmed: false, loseInstagramPublishResponse: false, rejectCreateOnce: false };
+  const control = { confirmed: false, loseInstagramPublishResponse: false, rejectCreateOnce: false, rejectInstagramUploadOnce: false, loseTikTokChunkResponseOnce: false };
   let igPublished = false, fbPublished = false, ttSize = 0, ttBytes = Buffer.alloc(0);
   const json = (res: ServerResponse, value: unknown, status = 200) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(value)); };
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -32,11 +32,12 @@ export async function apiFixture() {
         ttSize = JSON.parse(binary.toString()).source_info.video_size;
         return json(res, { data: { publish_id: "tt-job", upload_url: "https://upload.us.tiktokapis.com/video" }, error: { code: "ok" } });
       }
-      if (path.includes("/status/fetch/")) return json(res, { data: { status: ttBytes.length < ttSize ? "PROCESSING_UPLOAD" : control.confirmed ? "PUBLISH_COMPLETE" : "PROCESSING_DOWNLOAD", ...(control.confirmed ? { publicaly_available_post_id: ["tt-post"] } : {}) }, error: { code: "ok" } });
+      if (path.includes("/status/fetch/")) return json(res, { data: { status: ttBytes.length < ttSize ? "PROCESSING_UPLOAD" : control.confirmed ? "PUBLISH_COMPLETE" : "PROCESSING_DOWNLOAD", uploaded_bytes: ttBytes.length, ...(control.confirmed ? { publicaly_available_post_id: ["tt-post"] } : {}) }, error: { code: "ok" } });
       if (path.includes("upload.us.tiktokapis.com")) {
         const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(String(req.headers["content-range"]));
         if (!range || Number(range[1]) !== ttBytes.length || Number(range[2]) - Number(range[1]) + 1 !== binary.length || Number(range[3]) !== ttSize) return json(res, { error: { code: "bad_range" } }, 400);
         ttBytes = Buffer.concat([ttBytes, binary]); files.tiktok = ttBytes;
+        if (control.loseTikTokChunkResponseOnce) { control.loseTikTokChunkResponseOnce = false; return req.socket.destroy(); }
         res.writeHead(ttBytes.length === ttSize ? 201 : 206); return res.end();
       }
       if (path.endsWith("/ig-account/media")) {
@@ -46,6 +47,7 @@ export async function apiFixture() {
         return json(res, { id: "ig-container", uri: "https://rupload.facebook.com/ig-api-upload/v25.0/ig-container" });
       }
       if (path.includes("/ig-api-upload/")) {
+        if (control.rejectInstagramUploadOnce) { control.rejectInstagramUploadOnce = false; return json(res, { error: { code: 1 } }, 503); }
         if (Number(req.headers.file_size) !== binary.length) return json(res, { error: { code: "bad_size" } }, 400);
         files.instagram = binary; return json(res, { success: true });
       }

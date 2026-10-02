@@ -14,7 +14,7 @@ function run(binary, args) {
 }
 if (process.platform !== "linux") throw new Error("This setup targets Linux");
 const [major, minor] = process.versions.node.split(".").map(Number);
-if (major < 22 || (major === 22 && minor < 9)) throw new Error("Install Node.js 22.9 or newer first");
+if (major < 22 || (major === 22 && minor < 12)) throw new Error("Install Node.js 22.12 or newer first");
 for (const binary of ["ffmpeg", "ffprobe"]) run(binary, ["-version"]);
 run("flock", ["--version"]);
 run("npm", ["ci"]);

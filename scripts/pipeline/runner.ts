@@ -107,21 +107,12 @@ export async function deliver(store: Store, job: Job, publishers: Publishers): P
   }
 }
 
-export async function cleanup(store: Store, job: Job, publishers: Publishers): Promise<void> {
+export async function cleanup(store: Store, job: Job): Promise<void> {
   if (job.state === "deleted") return;
   const since = retentionStart(job);
   if (since === null || store.clock().getTime() < since + RETENTION_MS) return;
-  // Recheck publication at deletion time. Expired tokens/offline APIs preserve the files.
-  try {
-    for (const variant of job.variants) for (const delivery of variant.deliveries) {
-      const artifact = artifactFor(job, variant);
-      const receipt = await publishers[delivery.platform].advance({ file: store.path(job.id, variant.file), artifact, variant, delivery, checkpoint: () => store.save(job) });
-      if (!receipt || receipt.id !== delivery.remoteId) throw new Error("Remote publication could not be reconfirmed; cleanup postponed");
-    }
-  } catch (error) {
-    await store.log("cleanup_postponed", { jobId: job.id, error: errorMessage(error) });
-    return;
-  }
+  // Use durable terminal publication receipts. Cleanup remains automatic after
+  // 24 hours even when access tokens expire or the computer is offline.
   for (const artifact of job.artifacts) {
     if (artifact.deletedAt) continue;
     try {
@@ -162,7 +153,7 @@ export async function cleanup(store: Store, job: Job, publishers: Publishers): P
 export async function work(store: Store, publishers: Publishers, media = generateMedia, onlyCleanup = false): Promise<void> {
   const jobs = await store.jobs();
   // Always free eligible space before starting the next render.
-  for (const job of jobs) await cleanup(store, job, publishers);
+  for (const job of jobs) await cleanup(store, job);
   if (onlyCleanup) return;
   for (const job of jobs) {
     if (job.state === "deleted" || job.state === "retained") continue;

@@ -15,7 +15,7 @@ git clone --branch codex/bolworld-local-video-pipeline https://github.com/jlrinc
 cd bolworld
 ```
 
-Requisitos: Git, Node.js **22.9 o posterior** (recomendado Node 24 LTS), npm, `flock` (habitualmente incluido con Linux) y FFmpeg con `libx264`, AAC y `ffprobe`. En Debian/Ubuntu, FFmpeg se instala con `sudo apt install ffmpeg`. Instala Node desde su distribuidor habitual; el Node de algunas versiones de Ubuntu es demasiado antiguo.
+Requisitos: Git, Node.js **22.12 o posterior** (recomendado Node 24 LTS), npm, `flock` (habitualmente incluido con Linux) y FFmpeg con `libx264`, AAC y `ffprobe`. En Debian/Ubuntu, FFmpeg se instala con `sudo apt install ffmpeg`. Instala Node desde su distribuidor habitual; el Node de algunas versiones de Ubuntu es demasiado antiguo.
 
 ```bash
 npm run setup:local -- --services
@@ -61,7 +61,7 @@ El ejemplo crea tres variantes diferentes: TikTok a velocidad normal, Instagram 
 ```text
 generación → variantes → validación técnica completa → subida
 → consulta de procesamiento/publicación → confirmación de todos los destinos
-→ conservación de al menos 24 h → comprobación remota → limpieza
+→ conservación de al menos 24 h → verificación de propiedad/hashes → limpieza
 ```
 
 ## Almacenamiento temporal y seguridad de limpieza
@@ -83,9 +83,9 @@ output/pipeline/
 
 Se esperan **24 horas desde la última confirmación de publicación de todas las variantes en todos sus destinos**. Esta regla conserva cada archivo al menos 24 horas y permite retirar también la fuente y los intermediarios cuando ya no son necesarios. Si una variante falla, queda sin confirmar o está programada para más adelante, se conservan todos los archivos de ese trabajo. No se cuenta desde la creación: una subida retrasada no reduce la ventana de conservación.
 
-Antes de eliminar, se vuelven a consultar las publicaciones remotas. La eliminación sólo acepta archivos registrados previamente como propios, en su carpeta de UUID, con la misma identidad de archivo, tamaño y SHA-256. Rechaza symlinks, hardlinks, rutas externas, archivos sustituidos y contenido modificado. No utiliza `rm -rf`, limpieza general por extensión ni antigüedad de directorios. Los archivos manuales, configuraciones, código y assets permanecen intactos. Los manifiestos y logs pequeños permanecen para poder auditar el proceso; los MP4, WAV y overlays propios se retiran.
+La eliminación exige los comprobantes de publicación guardados de todos los destinos, vinculados al hash de cada variante. Sólo acepta archivos registrados previamente como propios, en su carpeta de UUID, con la misma identidad de archivo, tamaño y SHA-256. Rechaza symlinks, hardlinks, rutas externas, archivos sustituidos y contenido modificado. No utiliza `rm -rf`, limpieza general por extensión ni antigüedad de directorios. Los archivos manuales, configuraciones, código y assets permanecen intactos. Los manifiestos y logs pequeños permanecen para poder auditar el proceso; los MP4, WAV y overlays propios se retiran.
 
-El temporizador elimina los archivos elegibles en su siguiente revisión, normalmente dentro de los cinco minutos posteriores al plazo. Si no hay red, el token caducó o la publicación remota dejó de existir, se pospone la eliminación. Un bloqueo exclusivo y JSON guardado mediante sustitución atómica permiten retomar el trabajo después de un reinicio. Las respuestas ambiguas se conservan para revisión y se consultan de nuevo sin crear una segunda publicación. No es posible garantizar exactamente una publicación si una API pierde la respuesta de creación y no ofrece una clave idempotente; se prefiere detener ese destino y conservar el archivo.
+El temporizador elimina los archivos elegibles en su siguiente revisión, normalmente dentro de los cinco minutos posteriores al plazo. La limpieza funciona con los comprobantes persistentes aunque no haya red o un token haya caducado; los trabajos todavía sin confirmar conservan todos sus archivos. La publicación remota debe mantenerse si deseas conservar el contenido después de eliminar la copia local. Un bloqueo exclusivo y JSON guardado mediante sustitución atómica permiten retomar el trabajo después de un reinicio. Las respuestas ambiguas se conservan para revisión y se consultan de nuevo sin crear una segunda publicación. No es posible garantizar exactamente una publicación si una API pierde la respuesta de creación y no ofrece una clave idempotente; se prefiere detener ese destino y conservar el archivo.
 
 Se pausa la generación cuando quedan menos de 2 GiB libres. Se aceptan hasta diez trabajos activos por defecto; ambos valores se configuran en `.env.local`. Si una red permanece desconectada, se bloquean nuevos trabajos al alcanzar ese límite en lugar de borrar los pendientes.
 
@@ -102,7 +102,7 @@ Los logs son JSONL legible, una línea por evento, con hora UTC. Eventos princip
 | `upload_confirmed` | Identificador y URL remota si está disponible, hora de confirmación |
 | `deletion_scheduled` | Fecha de eliminación y lista de archivos propios |
 | `file_deleted`, `file_deleted_recovered` | Hora y archivo eliminado, incluyendo recuperación tras reinicio |
-| `generation_error`, `upload_error`, `cleanup_error`, `cleanup_postponed` | Error y, cuando corresponde, siguiente intento |
+| `generation_error`, `upload_error`, `cleanup_error` | Error y, cuando corresponde, siguiente intento |
 
 Los tokens no se imprimen. Las URLs de subida firmadas se guardan sólo en el manifiesto privado para recuperar la sesión, y se omiten en `status` y logs. El directorio del sistema tiene permisos privados del usuario.
 

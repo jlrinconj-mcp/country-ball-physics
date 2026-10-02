@@ -38,17 +38,17 @@ it.runIf(process.env.PIPELINE_E2E === "1")("real simulation → three MP4 varian
     }
     // No confirmation, no deletion, even after two days.
     now = new Date(now.getTime() + 2 * RETENTION_MS);
-    await cleanup(store, job, fixture.publishers);
+    await cleanup(store, job);
     expect((await readFile(store.path(job.id, job.variants[0]!.file))).length).toBeGreaterThan(0);
     fixture.control.confirmed = true;
     const restored = (await store.jobs())[0]!;
     await deliver(store, restored, fixture.publishers);
     expect(restored.state).toBe("retained");
     now = new Date(now.getTime() + RETENTION_MS - 1);
-    await cleanup(store, restored, fixture.publishers);
+    await cleanup(store, restored);
     expect((await readFile(store.path(job.id, job.variants[0]!.file))).length).toBeGreaterThan(0);
     now = new Date(now.getTime() + 1);
-    await cleanup(store, restored, fixture.publishers);
+    await cleanup(store, restored);
     expect(restored.state).toBe("deleted");
     expect(await readFile(manual, "utf8")).toBe("do not delete");
     for (const artifact of restored.artifacts) await expect(readFile(store.path(job.id, artifact.path))).rejects.toMatchObject({ code: "ENOENT" });

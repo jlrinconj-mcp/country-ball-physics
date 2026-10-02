@@ -20,6 +20,8 @@ interface ApiBody {
     publicaly_available_post_id?: string[];
     privacy_level_options?: string[];
     creator_username?: string;
+    comment_disabled?: boolean;
+    uploaded_bytes?: number;
     max_video_post_duration_sec?: number;
     user?: { open_id?: string };
   };
@@ -92,10 +94,11 @@ export class SocialPublisher implements Publisher {
     await context.checkpoint();
     const stream = createReadStream(context.file);
     try {
-      await this.api(this.uploadUrl(ticket.uploadUrl!, true), {
+      const result = await this.api(this.uploadUrl(ticket.uploadUrl!, true), {
         method: "POST", duplex: "half", body: stream as unknown as BodyInit,
         headers: { Authorization: `OAuth ${this.metaToken()}`, offset: "0", file_size: String(context.artifact.size), "Content-Length": String(context.artifact.size), "Content-Type": "application/octet-stream" },
       });
+      if (result.success === false) throw new Error("Meta rejected the binary upload");
     } finally { stream.destroy(); }
     ticket.phase = "uploaded";
     // A successful binary upload is never a remote confirmation.
@@ -130,7 +133,11 @@ export class SocialPublisher implements Publisher {
       // Never repeat media_publish after an ambiguous timeout, even if still processing.
       throw new UncertainPublication("Instagram publication response is uncertain; review the existing container");
     }
-    if (ticket.phase === "created") await this.metaUpload(context);
+    if (ticket.phase === "created" || ticket.phase === "uploading") {
+      const existing = await this.meta(ticket.id, undefined, "status_code");
+      if (["ERROR", "EXPIRED"].includes(existing.status_code ?? "")) throw new Error(`Instagram container ${existing.status_code}`);
+      if (existing.status_code !== "FINISHED") await this.metaUpload(context);
+    }
     const status = await this.meta(ticket.id, undefined, "status_code");
     if (["ERROR", "EXPIRED"].includes(status.status_code ?? "")) throw new Error(`Instagram container ${status.status_code}`);
     if (status.status_code !== "FINISHED") return null;
@@ -165,7 +172,14 @@ export class SocialPublisher implements Publisher {
       ticket.id = body.video_id; ticket.uploadUrl = this.uploadUrl(body.upload_url, true); ticket.phase = "created";
       await context.checkpoint();
     }
-    if (ticket.phase === "created") await this.metaUpload(context);
+    if (ticket.phase === "created" || ticket.phase === "uploading") {
+      const existing = await this.meta(ticket.id, undefined, "status");
+      if (existing.status?.video_status === "error") throw new Error("Facebook upload/processing failed");
+      if (existing.status?.processing_phase?.status === "complete") {
+        ticket.phase = "uploaded";
+        await context.checkpoint();
+      } else await this.metaUpload(context);
+    }
     const status = await this.meta(ticket.id, undefined, "status");
     if (status.status?.video_status === "error") throw new Error("Facebook processing/publishing failed");
     if (status.status?.processing_phase?.status === "complete" && status.status?.publishing_phase?.status === "complete" && status.status?.video_status === "ready") {
@@ -218,7 +232,7 @@ export class SocialPublisher implements Publisher {
       ticket.phase = "creating";
       await context.checkpoint();
       const body = await this.definiteCreate(context, () => this.tt("post/publish/video/init/", {
-        post_info: { title: variant.spec.caption, privacy_level: privacy, disable_duet: true, disable_stitch: true, disable_comment: false, video_cover_timestamp_ms: 1000 },
+        post_info: { title: variant.spec.caption, privacy_level: privacy, disable_duet: true, disable_stitch: true, disable_comment: creator.data?.comment_disabled ?? false, video_cover_timestamp_ms: 1000 },
         source_info: { source: "FILE_UPLOAD", video_size: size, chunk_size: chunkSize, total_chunk_count: chunks },
       }));
       if (!body.data?.publish_id || !body.data.upload_url) throw new Error("TikTok returned no upload session");
@@ -236,6 +250,20 @@ export class SocialPublisher implements Publisher {
       return { id: id ?? ticket.id, url: id && ticket.username ? `https://www.tiktok.com/@${encodeURIComponent(ticket.username)}/video/${id}` : undefined };
     }
     if (ticket.phase === "uploading" && result.data?.status === "PROCESSING_UPLOAD") {
+      const received = result.data.uploaded_bytes;
+      const chunkSize = Number(ticket.chunkSize);
+      // The status endpoint recovers an acknowledgement lost after a complete chunk.
+      if (received !== undefined) {
+        if (!Number.isSafeInteger(received) || received < 0 || received > artifact.size!) throw new Error("Invalid TikTok upload progress");
+        if (received === artifact.size) {
+          ticket.phase = "uploaded";
+          await context.checkpoint();
+          return null;
+        }
+        if (received % chunkSize !== 0) throw new Error("TikTok reports an incomplete chunk; preserve the file for review");
+        ticket.nextChunk = String(received / chunkSize);
+        await context.checkpoint();
+      }
       const file = await open(context.file, "r");
       try {
         const chunks = Number(ticket.chunks), chunkSize = Number(ticket.chunkSize);
