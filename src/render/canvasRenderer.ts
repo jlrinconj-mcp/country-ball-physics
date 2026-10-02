@@ -2,6 +2,7 @@ import type { CountryBall } from "@/entities/CountryBall";
 import type { Obstacle, RenderShape } from "@/entities/Obstacle";
 import type { Zone } from "@/entities/Zone";
 import type { Camera } from "@/engine/camera";
+import { TICK_DT } from "@/engine/physicsWorld";
 import { GHOST_LIFETIME, type Simulation } from "@/engine/simulation";
 import type { Rect } from "@/engine/types";
 import type { DisplayOptions } from "./displayOptions";
@@ -9,6 +10,7 @@ import type { FlagAtlas } from "./flagAtlas";
 import { FORMATS, safeRect } from "./formats";
 import { drawHud } from "./hudRenderer";
 import { countryName } from "./i18n";
+import { drawBallExtras, drawLiveHud, drawLobby, type LiveFrame } from "./liveRenderer";
 import type { HudTracker } from "./hudTracker";
 import { drawText } from "./text";
 import { THEMES, type RenderTheme } from "./theme";
@@ -22,6 +24,8 @@ export interface Frame {
   hud: HudTracker;
   /** Context from outside the simulation (e.g. tournament round). */
   overlay?: HudOverlay;
+  /** Live mode: viewer tags, boosts, chat feed, points. */
+  live?: LiveFrame;
 }
 
 export interface HudOverlay {
@@ -79,6 +83,20 @@ export class CanvasRenderer {
       this.drawScrim(format.width, camera.getViewport().content.y + 40, theme);
       drawHud(ctx, frame, format, theme, this.atlas);
     }
+    if (frame.live) drawLiveHud(ctx, frame.live, format, theme, display.language);
+    if (display.safeArea) this.drawSafeArea(format.width, format.height, safeRect(format));
+  }
+
+  /** The live lobby between games (no simulation on screen). */
+  renderLobby(live: LiveFrame, display: DisplayOptions, now: number): void {
+    const format = FORMATS[display.format];
+    const theme = THEMES[display.theme];
+    const ctx = this.ctx;
+    const scale = this.canvas.width / format.width;
+    this.atlas.setStyle({ border: theme.ballBorder, borderRatio: 0.045, shading: true });
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    this.drawBackground(format.width, format.height, theme);
+    drawLobby(ctx, live, format, theme, this.atlas, display.language, now);
     if (display.safeArea) this.drawSafeArea(format.width, format.height, safeRect(format));
   }
 
@@ -227,6 +245,18 @@ export class CanvasRenderer {
       ctx.restore();
       if (display.eyes) this.drawEyes(ball, x, y);
       ctx.globalAlpha = 1;
+    }
+
+    // Viewer tags and boost flashes, over the balls.
+    if (frame.live) {
+      const time = (frame.sim.tick - 1 + alpha) * TICK_DT;
+      for (const ball of frame.sim.balls) {
+        if (!ball.active) continue;
+        const x = lerp(ball.prevX, ball.x, alpha);
+        const y = lerp(ball.prevY, ball.y, alpha);
+        if (x < view.x || x > view.x + view.w || y < view.y || y > view.y + view.h) continue;
+        drawBallExtras(ctx, frame.live, ball, x, y, camera.pose.zoom, time, theme);
+      }
     }
 
     // Labels in a second pass so neighbouring balls never cover them.

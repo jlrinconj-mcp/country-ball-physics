@@ -101,3 +101,82 @@ export function feedLine(name: string, event: { kind: "finished" | "eliminated";
   if (language === "es") return event.kind === "finished" ? `${name} LLEGA #${event.place}` : `${name} ELIMINADO`;
   return event.kind === "finished" ? `${name} FINISHED #${event.place}` : `${name} IS OUT`;
 }
+
+// ── Live mode ─────────────────────────────────────────────────────────────
+
+const MODE_NAMES: Record<string, Record<Language, string>> = {
+  "last-place-elimination": { en: "Last Place Out", es: "El último sale" },
+  race: { en: "Race", es: "Carrera" },
+  "marble-race": { en: "Marble Race", es: "Canicas" },
+  "last-country-standing": { en: "Last One Standing", es: "Último en pie" },
+  "elimination-drop": { en: "Elimination Drop", es: "Caída mortal" },
+};
+
+const ES_MAPS: Record<string, string> = {
+  ring: "Anillo",
+  "double-ring": "Anillo doble",
+  "triple-ring": "Anillo triple",
+  hammers: "Martillos",
+  crushers: "Trituradoras",
+  trapdoors: "Trampillas",
+  tumbler: "Tambor",
+  vortex: "Vórtice",
+  hurdles: "Vallas",
+  "obstacle-mix": "Obstáculos",
+  marble: "Circuito",
+  spinner: "Aspas",
+  funnel: "Embudo",
+  drop: "Caída",
+  "grand-gauntlet": "Gran desafío",
+};
+
+/** "El último sale · Martillos" */
+export function gameLabel(mode: string, map: string, mapLabel: string, language: Language = "en"): string {
+  const name = MODE_NAMES[mode]?.[language] ?? mode;
+  return `${name} · ${language === "es" ? (ES_MAPS[map] ?? mapLabel) : mapLabel}`;
+}
+
+const LIVE_TEXT = {
+  en: {
+    game: (n: number) => `GAME #${n}`,
+    join: "JOIN THE GAME!",
+    type: "TYPE IN CHAT",
+    command: "!join + your country",
+    example: "e.g. !join brazil  ·  🇧🇷",
+    starts: "STARTS IN",
+    vote: "VOTE THE NEXT GAME",
+    voteHint: "type 1, 2 or 3",
+    teams: (n: number) => `TEAMS · ${n} PLAYERS`,
+    noTeams: "No one yet — be the first!",
+    top: "TOP PLAYERS",
+    pts: "PTS",
+    boostHint: "!boost to push your country",
+    boosted: (user: string, country: string) => `${user} BOOSTS ${country}`,
+    joined: (user: string, country: string) => `${user} JOINS ${country}`,
+    unknown: (user: string, query: string) => `${user}: "${query}"?`,
+    winners: (n: number) => `+${n} PTS`,
+  },
+  es: {
+    game: (n: number) => `PARTIDA #${n}`,
+    join: "¡ÚNETE A LA PARTIDA!",
+    type: "ESCRIBE EN EL CHAT",
+    command: "!join + tu país",
+    example: "ej: !join colombia  ·  🇨🇴",
+    starts: "EMPIEZA EN",
+    vote: "VOTA EL PRÓXIMO JUEGO",
+    voteHint: "escribe 1, 2 o 3",
+    teams: (n: number) => `EQUIPOS · ${n} JUGADORES`,
+    noTeams: "Nadie aún — ¡sé el primero!",
+    top: "MEJORES JUGADORES",
+    pts: "PTS",
+    boostHint: "!boost para impulsar a tu país",
+    boosted: (user: string, country: string) => `${user} IMPULSA A ${country}`,
+    joined: (user: string, country: string) => `${user} SE UNE A ${country}`,
+    unknown: (user: string, query: string) => `${user}: ¿"${query}"?`,
+    winners: (n: number) => `+${n} PTS`,
+  },
+} satisfies Record<Language, unknown>;
+
+export function liveText(language: Language = "en") {
+  return LIVE_TEXT[language];
+}

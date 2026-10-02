@@ -11,6 +11,7 @@ import { DEFAULT_DISPLAY, type DisplayOptions } from "@/render/displayOptions";
 import { EMPTY_SNAPSHOT, SimulationController } from "@/runtime/SimulationController";
 import { ControlPanel, seedPrefix } from "./ControlPanel";
 import { CountrySelector, selectPreset, type SelectionState } from "./CountrySelector";
+import { LiveControls } from "./LiveControls";
 import { LivePanel } from "./LivePanel";
 import { SimulatorViewport } from "./SimulatorViewport";
 import { Button } from "./ui";
@@ -99,7 +100,7 @@ export function SimulatorApp() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
-      if (selectorOpen || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (selectorOpen || snapshot.live || e.metaKey || e.ctrlKey || e.altKey) return;
       const key = e.key.toLowerCase();
       if (key === " ") {
         e.preventDefault();
@@ -111,7 +112,7 @@ export function SimulatorApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [controller, generate, newSeed, restart, selectorOpen, togglePause]);
+  }, [controller, generate, newSeed, restart, selectorOpen, snapshot.live, togglePause]);
 
   // Expose the runtime for debugging and automation in development.
   useEffect(() => {
@@ -121,6 +122,8 @@ export function SimulatorApp() {
   }, [controller]);
 
   const running = snapshot.config;
+  // While live, the show runs itself: no manual runs or recordings.
+  const onAir = !!snapshot.live;
   const canRecord = useSyncExternalStore(subscribeNever, () => controller.canRecord, () => false);
   const countryIndex = useMemo(() => new Map((countries ?? []).map((c) => [c.cca3, c])), [countries]);
   const pendingChanges =
@@ -138,6 +141,11 @@ export function SimulatorApp() {
             <p className="text-[11px] text-zinc-500">Deterministic simulator for short-form video</p>
           </div>
         </header>
+        {countries && (
+          <div className="border-b border-white/[0.06] px-4 py-4">
+            <LiveControls controller={controller} live={snapshot.live} config={config} countries={countries} selected={selection.selected} language={display.language} />
+          </div>
+        )}
         {countries ? (
           <ControlPanel
             config={config}
@@ -174,17 +182,17 @@ export function SimulatorApp() {
           <Button
             variant="primary"
             onClick={generate}
-            disabled={!countries || selection.selected.length < (config.tournament?.size ?? 2)}
+            disabled={onAir || !countries || selection.selected.length < (config.tournament?.size ?? 2)}
           >
             Generate Simulation
           </Button>
-          <Button onClick={restart} disabled={!running} title="Restart this run from the beginning (R)">
+          <Button onClick={restart} disabled={onAir || !running} title="Restart this run from the beginning (R)">
             Restart
           </Button>
-          <Button onClick={replaySameSeed} disabled={!countries} title="Run again with the last seed and current settings">
+          <Button onClick={replaySameSeed} disabled={onAir || !countries} title="Run again with the last seed and current settings">
             Replay Same Seed
           </Button>
-          <Button onClick={newSeed} disabled={!countries} title="Fresh seed, run immediately (N)">
+          <Button onClick={newSeed} disabled={onAir || !countries} title="Fresh seed, run immediately (N)">
             New Seed
           </Button>
           <span className="mx-1 h-5 w-px bg-white/10" />
@@ -204,8 +212,8 @@ export function SimulatorApp() {
           ) : (
             <Button
               onClick={() => void controller.record()}
-              disabled={!running || !canRecord}
-              title={canRecord ? "Replay from the start and download a full-resolution video" : "Video recording isn't supported in this browser"}
+              disabled={onAir || !running || !canRecord}
+              title={onAir ? "Stop live first: Record then replays the last live game, viewers' boosts included" : canRecord ? "Replay from the start and download a full-resolution video" : "Video recording isn't supported in this browser"}
             >
               <span className="h-2 w-2 rounded-full bg-red-500" /> Record video
             </Button>

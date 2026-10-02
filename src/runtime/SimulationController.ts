@@ -1,7 +1,8 @@
 import { AudioEngine } from "@/audio/audioEngine";
 import type { Country } from "@/countries/countryTypes";
 import { Camera } from "@/engine/camera";
-import { TICK_RATE } from "@/engine/physicsWorld";
+import { DEFAULT_CONFIG } from "@/engine/defaults";
+import { TICK_DT, TICK_RATE } from "@/engine/physicsWorld";
 import { selectParticipants, type Simulation, type SimulationResult } from "@/engine/simulation";
 import { SimulationLoop } from "@/engine/simulationLoop";
 import type { SimulationConfig } from "@/engine/types";
@@ -14,6 +15,10 @@ import { FORMATS } from "@/render/formats";
 import { HudTracker } from "@/render/hudTracker";
 import { setFontFamily } from "@/render/text";
 import { viewportFor } from "@/render/viewport";
+import type { ChatMessage } from "@/live/commands";
+import { LiveSession, type LiveOptions, type LiveView } from "@/live/session";
+import { createSource, type ChatSource, type SourceConfig, type SourceStatus } from "@/live/sources";
+import type { LiveFrame } from "@/render/liveRenderer";
 import { CanvasRecorder, downloadBlob } from "./recorder";
 
 /** Keep animating this long after the winner is declared, then idle. */
@@ -23,6 +28,8 @@ const RECORD_TAIL_TICKS = 3.5 * TICK_RATE;
 /** Pause between tournament heats (the winner card stays up meanwhile). */
 const BETWEEN_HEATS_TICKS = 4 * TICK_RATE;
 const PUBLISH_INTERVAL_MS = 200;
+/** Where live viewers' points are kept between streams. */
+const SCORES_KEY = "cbp-live-scores";
 
 export type Phase = "idle" | "loading" | "running" | "finished" | "error";
 
@@ -55,6 +62,14 @@ export interface ControllerSnapshot {
   recording: boolean;
   /** Smoothed display frame rate (0 until measured). */
   fps: number;
+  live: LiveSnapshot | null;
+}
+
+export interface LiveSnapshot {
+  view: LiveView;
+  chat: SourceStatus & { label: string | null };
+  /** Latest raw chat messages, newest last. */
+  messages: ChatMessage[];
 }
 
 export const EMPTY_SNAPSHOT: ControllerSnapshot = {
@@ -74,6 +89,7 @@ export const EMPTY_SNAPSHOT: ControllerSnapshot = {
   tournament: null,
   recording: false,
   fps: 0,
+  live: null,
 };
 
 /**
@@ -107,6 +123,14 @@ export class SimulationController {
   private recorder: CanvasRecorder | null = null;
   private fps = 0;
   private replay: ControllerSnapshot["replay"] = null;
+  private live: LiveSession | null = null;
+  private liveBase: SimulationConfig | null = null;
+  private liveLoading = false;
+  private liveSource: ChatSource | null = null;
+  private liveStatus: SourceStatus & { label: string | null } = { state: "closed", label: null };
+  private readonly liveBoosts = new Map<string, number>();
+  private liveMessages: ChatMessage[] = [];
+  private countryIndex = new Map<string, Country>();
 
   constructor() {
     this.loop = new SimulationLoop({
@@ -171,7 +195,7 @@ export class SimulationController {
       this.audio.disable();
       this.bindAudio();
     }
-    if (!this.recorder) this.loop.speed = display.speed;
+    if (!this.recorder && !this.live) this.loop.speed = display.speed;
     this.camera.options = { mode: display.camera, dynamicZoom: display.dynamicZoom };
     this.applyViewport();
     if (formatChanged && this.sim) this.camera.snap(this.sim);
@@ -183,6 +207,7 @@ export class SimulationController {
    */
   async load(config: SimulationConfig, countries: Country[]): Promise<void> {
     const token = ++this.loadToken;
+    if (countries !== this.countries) this.countryIndex = new Map(countries.map((c) => [c.cca3, c]));
     this.countries = countries;
     this.baseConfig = config;
     this.update({ ...EMPTY_SNAPSHOT, phase: "loading", config });
@@ -277,6 +302,145 @@ export class SimulationController {
     return this.sim;
   }
 
+  // ── Live mode ───────────────────────────────────────────────────────────
+
+  /**
+   * Run the canvas as a live game show: lobby (viewers join and vote), the
+   * voted game, results with points, and again. `base` supplies everything
+   * the vote doesn't decide (physics overrides, time limit…).
+   */
+  startLive(options: Omit<LiveOptions, "fill"> & { fill?: string[] }, base: SimulationConfig, countries: Country[]): void {
+    this.stopLive();
+    if (countries !== this.countries) this.countryIndex = new Map(countries.map((c) => [c.cca3, c]));
+    this.countries = countries;
+    const fill = options.fill?.length ? options.fill : countries.filter((c) => c.sovereign).map((c) => c.cca3);
+    const live = new LiveSession(countries, { ...options, fill });
+    try {
+      const saved = window.localStorage.getItem(SCORES_KEY);
+      if (saved) live.importScores(JSON.parse(saved));
+    } catch {
+      // No storage (private window…): points last for this stream only.
+    }
+    this.live = live;
+    this.liveBase = base;
+    this.loop.speed = 1;
+    this.loop.paused = false;
+    void this.atlas.preload(countries.filter((c) => fill.includes(c.cca3)), 6000);
+    this.publish(true);
+  }
+
+  stopLive(): void {
+    this.disconnectChat();
+    this.saveScores();
+    this.live = null;
+    this.liveBase = null;
+    this.liveLoading = false;
+    this.liveBoosts.clear();
+    this.liveMessages = [];
+    this.loop.speed = this.display.speed;
+    this.update({ ...this.snapshot, live: null });
+  }
+
+  get liveRunning(): boolean {
+    return this.live !== null;
+  }
+
+  /** Host shortcut: end the lobby now. */
+  startLiveGameNow(): void {
+    this.live?.startNow();
+  }
+
+  connectChat(config: SourceConfig): void {
+    this.disconnectChat();
+    const source = createSource(config);
+    this.liveSource = source;
+    this.liveStatus = { state: "connecting", label: source.label };
+    source.connect(
+      (message) => this.chat(message),
+      (status) => {
+        if (this.liveSource !== source) return;
+        this.liveStatus = { ...status, label: source.label };
+        this.publish(true);
+      },
+    );
+    this.publish(true);
+  }
+
+  disconnectChat(): void {
+    this.liveSource?.disconnect();
+    this.liveSource = null;
+    this.liveStatus = { state: "closed", label: null };
+  }
+
+  /** A chat message from any source (or the test console). */
+  chat(message: ChatMessage): void {
+    const live = this.live;
+    if (!live) return;
+    this.liveMessages = [...this.liveMessages.slice(-29), message];
+    const before = live.view().teams.length;
+    for (const action of live.handle(message)) {
+      if (action.type === "boost") this.sim?.input("boost", action.cca3);
+    }
+    // A new team in the lobby: get its flag ready.
+    const teams = live.view().teams;
+    if (teams.length > before) void this.atlas.preload(teams.map((t) => this.countryIndex.get(t.cca3)).filter((c): c is Country => !!c), 3000);
+    if (this.audio.enabled && live.phase === "lobby" && teams.length > before) this.audio.play("leader", { intensity: 0.6 });
+    this.dirty = true;
+  }
+
+  private stepLive(live: LiveSession): boolean {
+    const before = Math.ceil(live.view().countdown);
+    const signal = live.advance(TICK_DT);
+    if (signal === "start") void this.startLiveGame(live);
+    if (live.phase === "lobby") {
+      // Beeps for the last five seconds of the lobby.
+      const left = Math.ceil(live.view().countdown);
+      if (this.audio.enabled && left !== before && left <= 5 && left > 0) this.audio.play("countdown");
+      return true;
+    }
+    const sim = this.sim;
+    if (!sim || this.liveLoading) return true;
+    if (sim.finishedTick === null || sim.tick - sim.finishedTick < OUTRO_TICKS) {
+      sim.step();
+      this.sounds?.afterStep();
+    }
+    return true;
+  }
+
+  private async startLiveGame(live: LiveSession): Promise<void> {
+    const config = live.startConfig(this.liveBase ?? this.baseConfig ?? DEFAULT_CONFIG);
+    this.liveLoading = true;
+    this.liveBoosts.clear();
+    await this.load(config, this.countries);
+    if (this.live !== live) return;
+    this.liveLoading = false;
+    const sim = this.sim;
+    if (!sim) return live.cancel();
+    this.loop.speed = 1;
+    this.simListeners.push(
+      sim.events.on("boosted", ({ ball, tick }) => this.liveBoosts.set(ball.code, tick * TICK_DT)),
+      sim.events.on("simulationFinished", ({ result }) => {
+        live.finish(result);
+        this.saveScores();
+        // "Record video" now replays this game, viewers' boosts included.
+        this.baseConfig = { ...config, inputs: [...sim.inputs] };
+      }),
+    );
+  }
+
+  private liveFrame(live: LiveSession): LiveFrame {
+    return { view: live.view(), countries: this.countryIndex, team: (cca3) => live.team(cca3), boosts: this.liveBoosts };
+  }
+
+  private saveScores(): void {
+    if (!this.live) return;
+    try {
+      window.localStorage.setItem(SCORES_KEY, JSON.stringify(this.live.exportScores()));
+    } catch {
+      // Storage unavailable: nothing to keep.
+    }
+  }
+
   // ── Internals ───────────────────────────────────────────────────────────
 
   private startSimulation(config: SimulationConfig): void {
@@ -302,6 +466,7 @@ export class SimulationController {
   }
 
   private step(): boolean {
+    if (this.live) return this.stepLive(this.live);
     const sim = this.sim;
     if (!sim) return false;
     if (sim.finishedTick !== null) {
@@ -334,9 +499,14 @@ export class SimulationController {
     if (dt > 0 && dt < 1) this.fps = this.fps === 0 ? 1 / dt : this.fps * 0.9 + (1 / dt) * 0.1;
     const sim = this.sim;
     const renderer = this.renderer;
+    if (renderer && this.live && (this.live.phase === "lobby" || !sim || this.liveLoading)) {
+      renderer.renderLobby(this.liveFrame(this.live), this.display, this.live.clock);
+      if (performance.now() - this.lastPublish > 250) this.publish(true);
+      return;
+    }
     if (!sim || !renderer || !this.hud) return;
     this.camera.update(sim, alpha, dt);
-    renderer.render({ sim, camera: this.camera, alpha, display: this.display, hud: this.hud, overlay: this.overlay });
+    renderer.render({ sim, camera: this.camera, alpha, display: this.display, hud: this.hud, overlay: this.overlay, live: this.live ? this.liveFrame(this.live) : undefined });
     if (this.dirty || performance.now() - this.lastPublish > 500) this.publish(false);
   }
 
@@ -381,7 +551,11 @@ export class SimulationController {
     this.lastPublish = now;
     this.dirty = false;
     const sim = this.sim;
-    if (!sim) return;
+    const live: LiveSnapshot | null = this.live ? { view: this.live.view(), chat: { ...this.liveStatus }, messages: [...this.liveMessages] } : null;
+    if (!sim) {
+      if (live) this.update({ ...this.snapshot, live });
+      return;
+    }
     const row = (b: Simulation["balls"][number]): RankingRow => ({
       cca3: b.code,
       cca2: b.country.cca2,
@@ -407,6 +581,7 @@ export class SimulationController {
       tournament: this.tournament?.summary() ?? null,
       recording: this.recorder !== null,
       fps: Math.round(this.fps),
+      live,
     });
   }
 

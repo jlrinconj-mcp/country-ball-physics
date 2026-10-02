@@ -92,6 +92,25 @@ Buttons: **Generate Simulation** (apply the settings) · **Restart** (same run f
 | `npm run stalls -- [map] [countries] [seconds]` | Where balls sit still during races, per map |
 | `npm run render:frames -- --mode=race --times=0,5,end` | Render PNG frames to `output/frames` |
 
+## Live mode (viewers play from chat)
+
+Turn a live stream into a game. Open **🔴 Live** in the sidebar, pick a chat source and press **Start live**; stream the canvas with OBS (window or browser-source capture). The show runs itself:
+
+1. **Lobby** (30 s by default): viewers type `!join colombia` (also `!unirme`, `!país`, a country code like `COL`, a Spanish or English name, an alias like `eeuu` or `holanda`, or just the flag emoji 🇨🇴) to play with a country. Several viewers on one country make a team. They vote the next game with `1`, `2` or `3`; the screen shows how to join, the countdown, the vote, the teams and the top players.
+2. **Game**: the winning vote (Last Place Out on Plinko, the ring, Hammer Alley…, ring races, Last One Standing…) with the viewers' countries, topped up from the country selection. Viewers' names ride over their country's ball. `!boost` (or `!dale`, `!go`) pushes their country, once every few seconds each; gifts (TikTok gifts, YouTube Super Chats, Twitch bits) boost without waiting. Each mode pushes the helpful way: along the route, out of the rings in races, towards the middle in Last One Standing.
+3. **Results**: the winner card with the team that won; points (winner 100, 2nd 50, 3rd 25, +5 for playing) add up across games and streams (kept in the browser).
+
+Chat sources:
+
+| Source | Setup |
+| --- | --- |
+| Twitch | Channel name. Read anonymously; no account or key. |
+| YouTube Live | A YouTube Data API v3 key and the live video's URL. Polls every 6 s to stay within the daily quota. |
+| Bridge (TikTok Live and anything else) | Send chat to `POST /api/live/messages` as `{"user":"…","text":"…"}` (or `nickname`/`comment`, lists, `"kind":"gift"`), or `GET /api/live/messages?user=…&text=…`. TikFinity and Streamer.bot can call it on every TikTok comment or gift. Set `LIVE_BRIDGE_TOKEN` to require `?token=…`. |
+| Test | Type as any viewer, or add 10 bots, from the sidebar. |
+
+Boosts go through the engine as recorded inputs (`config.inputs`), so the simulation stays deterministic: after **Stop live**, **Record video** replays the last live game exactly, boosts included, ready to post as a Short.
+
 ## Content factory
 
 ```ts
@@ -167,6 +186,7 @@ Everything works without configuration. Copy `.env.example` to `.env.local` to o
 | --- | --- | --- |
 | `RESTCOUNTRIES_API_KEY` | unset | Use REST Countries v5 (server-side only) |
 | `COUNTRIES_DATASET_URL` | mledoze/countries on jsDelivr | Override the open dataset URL |
+| `LIVE_BRIDGE_TOKEN` | unset | Require `?token=…` (or `x-live-token`) on the live chat bridge |
 
 ## Country data
 
@@ -193,7 +213,7 @@ UI ─▶ CountryService ─▶ /api/countries (Next route, 12 h in-memory cache
 
 ```
 src/
-  app/                 Next.js app (page, layout, /api/countries route)
+  app/                 Next.js app (page, layout, /api/countries and /api/live/messages routes)
   countries/           CountryService, types, cache, providers, selection presets
   engine/              Framework-free simulation core
     random.ts          createRandom(seed): seeded PRNG with forked streams
@@ -210,6 +230,7 @@ src/
   render/              Canvas renderer, HUD, flag atlas, formats, safe areas, themes
   audio/               Synthesized, rate-limited sounds: Web Audio engine (live, recordings) and offline mixer (CLI videos, same sounds on simulated time)
   content/             planSimulation, generateSimulation, metadata templates
+  live/                Live mode: chat commands, country matching, LiveSession (lobby → game → results, points), Twitch / YouTube / bridge chat sources
   runtime/             SimulationController (engine ↔ canvas ↔ React), video recorder
   components/          React UI (control panel, track editor, selector, live panel)
 scripts/               Node tooling: generate, probe, render-frames, headless renderer

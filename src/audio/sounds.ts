@@ -91,6 +91,7 @@ export function soundCues(
     sim.events.on("countryParked", ({ ball }) => play("finish", { intensity: 0.4, pan: panOf(ball.x) })),
     sim.events.on("winnerDeclared", () => play("victory")),
     sim.events.on("roundStarted", () => play("countdown")),
+    sim.events.on("boosted", ({ ball }) => play("bumper", { intensity: 0.8, pan: panOf(ball.x) })),
   ];
   let lastBanner: string | undefined;
   return {
