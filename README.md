@@ -136,9 +136,24 @@ npm run generate -- --mode=marble-race --countries=asia --lang=es
 npm run generate -- --mode=race --countries=COL,ARG,BRA --frames=30   # PNG sequence for ffmpeg
 npm run generate -- --mode=race --video                               # MP4 with sound, needs ffmpeg on PATH
 npm run generate -- --mode=race --video --no-audio                    # silent MP4
+npm run generate -- --mode=race --video --headline="PICK YOUR FLAG"    # custom on-video hook
 ```
 
 Each run writes `output/runs/<seed>/metadata.json` (request, config, result, tournament bracket, metadata) and `thumbnail.png`, and appends a line to `output/runs/index.jsonl`. Titles never contain the winner; the spoiler lives in `metadata.result`.
+
+### Local generation, variants and social publishing
+
+For bolworld's Linux workflow, see [the local video guide](docs/flujo-local-videos.md). It reuses this renderer, generates several FFmpeg variants, validates them, uploads through TikTok/Instagram/Facebook APIs and confirms publication before retaining files for at least 24 hours. A user systemd timer performs safe cleanup only inside `output/pipeline`; failed/unconfirmed uploads and manually created files are preserved.
+
+```bash
+npm run setup:local -- --services
+npm run pipeline -- doctor
+npm run pipeline -- enqueue --spec=publications/pipeline.example.json
+npm run pipeline -- work
+npm run pipeline -- status
+```
+
+Configure account authorization in `.env.local` before publishing. The pipeline test server verifies the lifecycle without publishing to real accounts.
 
 ## Custom tournaments
 

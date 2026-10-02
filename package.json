@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "dev": "next dev",
@@ -21,7 +21,10 @@
     "stalls": "tsx scripts/stalls.ts",
     "render:frames": "tsx scripts/render-frames.ts",
     "generate": "tsx scripts/generate.ts",
-    "tournament": "tsx scripts/tournament.ts"
+    "tournament": "tsx scripts/tournament.ts",
+    "pipeline": "node --env-file-if-exists=.env.local --import tsx scripts/video-pipeline.ts",
+    "setup:local": "node scripts/setup-local.mjs",
+    "test:pipeline": "vitest run scripts/pipeline"
   },
   "dependencies": {
     "matter-js": "^0.20.0",

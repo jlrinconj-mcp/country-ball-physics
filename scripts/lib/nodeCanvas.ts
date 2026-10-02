@@ -1,4 +1,4 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
 import type { CanvasPlatform, FlagImage } from "../../src/render/flagAtlas";
 import { setFontFamily } from "../../src/render/text";
 
@@ -24,7 +24,8 @@ export const nodePlatform: CanvasPlatform = {
 
 /** @napi-rs/canvas resolves system fonts on its own; just pick a family. */
 export function setupNodeFonts(): void {
-  setFontFamily("'Helvetica Neue', Helvetica, Arial, sans-serif");
+  const family = ["Arial", "Helvetica", "Liberation Sans", "DejaVu Sans", "Noto Sans"].find((name) => GlobalFonts.has(name));
+  setFontFamily(family ? `"${family}"` : "sans-serif");
 }
 
 export function createOutputCanvas(width: number, height: number) {
