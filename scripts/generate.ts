@@ -10,7 +10,7 @@
  *   npm run generate -- --mode=last-place-elimination --elimination=single   # one out a round (long)
  */
 import { spawn, spawnSync } from "node:child_process";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { OfflineMix } from "../src/audio/offlineMix";
 import { parseArgs } from "node:util";
 import { runPlan, type GeneratedSimulation } from "../src/content/generateSimulation";
@@ -36,6 +36,7 @@ const { values } = parseArgs({
     participants: { type: "string" },
     size: { type: "string" },
     lang: { type: "string", default: "en" },
+    headline: { type: "string" },
     out: { type: "string", default: "output/runs" },
     thumbnail: { type: "boolean", default: true },
     "no-thumbnail": { type: "boolean", default: false },
@@ -43,6 +44,10 @@ const { values } = parseArgs({
     video: { type: "boolean", default: false },
     "no-audio": { type: "boolean", default: false },
     elimination: { type: "string" },
+    "max-duration": { type: "string" },
+    "render-scale": { type: "string", default: "1" },
+    "keep-intermediates": { type: "boolean", default: false },
+    "request-file": { type: "string" },
   },
 });
 
@@ -61,7 +66,7 @@ if (values.video && spawnSync("ffmpeg", ["-version"]).status !== 0) {
 await mkdir(values.out, { recursive: true });
 for (let i = 0; i < count; i++) {
   const seed = values.seed ? (count > 1 ? `${values.seed}-${String(i + 1).padStart(3, "0")}` : values.seed) : undefined;
-  const request: GenerateRequest = {
+  const request: GenerateRequest = values["request-file"] ? JSON.parse(await readFile(values["request-file"], "utf8")) : {
     mode: values.mode as ContentMode,
     countries: values.countries,
     track: values.track,
@@ -72,9 +77,11 @@ for (let i = 0; i < count; i++) {
     tournamentSize: values.size ? (Number(values.size) as TournamentSize) : undefined,
     language,
     elimination: values.elimination === "single" ? "single" : values.elimination === "batch" ? "batch" : undefined,
+    maxDuration: values["max-duration"] ? Number(values["max-duration"]) : undefined,
   };
   const plan = planSimulation(request, countries);
-  const generated = runPlan(plan, countries, language);
+  if (values.headline !== undefined) plan.display.headline = values.headline;
+  const generated = runPlan(plan, countries, request.language ?? language);
   const dir = `${values.out}/${plan.seed}`;
   await mkdir(dir, { recursive: true });
 
@@ -131,7 +138,7 @@ async function renderThumbnail(generated: GeneratedSimulation, all: Country[]): 
   const sim = createSimulation(videoConfig(generated), all);
   // The main group fills a still frame better than a lone leader.
   const renderer = new HeadlessRenderer({ ...generated.plan.display, camera: "follow-group" }, 1);
-  await renderer.preload(sim.balls.map((b) => b.country));
+  await preloadFlags(renderer, sim.balls.map((b) => b.country));
   renderer.attach(sim);
   // A frame from the thick of it, well before the result.
   renderer.advanceTo(Math.round(generated.result.ticks * 0.35));
@@ -142,8 +149,10 @@ async function renderThumbnail(generated: GeneratedSimulation, all: Country[]): 
 
 async function renderSequence(generated: GeneratedSimulation, all: Country[], dir: string, fps: number, video: boolean): Promise<number> {
   const sim = createSimulation(videoConfig(generated), all);
-  const renderer = new HeadlessRenderer(generated.plan.display, 1);
-  await renderer.preload(sim.balls.map((b) => b.country));
+  const scale = Number(values["render-scale"]);
+  if (!Number.isFinite(scale) || scale <= 0 || scale > 1) throw new Error("--render-scale must be in (0, 1]");
+  const renderer = new HeadlessRenderer(generated.plan.display, scale);
+  await preloadFlags(renderer, sim.balls.map((b) => b.country));
   renderer.attach(sim);
   const ticksPerFrame = TICK_RATE / fps;
   const totalTicks = generated.result.ticks + 3 * TICK_RATE;
@@ -160,15 +169,23 @@ async function renderSequence(generated: GeneratedSimulation, all: Country[], di
   const silent = mix ? `${dir}/video.silent.mp4` : `${dir}/video.mp4`;
 
   const ffmpeg = video
-    ? spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(fps), "-i", "-", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", silent], { stdio: ["pipe", "inherit", "inherit"] })
+    ? spawn("ffmpeg", ["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(fps), "-i", "-", "-c:v", "libx264", "-threads", "2", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart", silent], { stdio: ["pipe", "inherit", "inherit"] })
     : null;
+  const encodingDone = ffmpeg ? exited(ffmpeg) : null;
+  // Observe errors immediately, including an encoder that fails before the last frame.
+  void encodingDone?.catch(() => {});
+  ffmpeg?.stdin.on("error", () => {});
   if (!video) await mkdir(`${dir}/frames`, { recursive: true });
 
   for (let f = 0; f < frames; f++) {
     renderer.advanceTo(Math.round(f * ticksPerFrame));
     const png = renderer.png(overlay);
     if (ffmpeg) {
-      if (!ffmpeg.stdin.write(png)) await new Promise((resolve) => ffmpeg.stdin.once("drain", resolve));
+      if (ffmpeg.stdin.destroyed) throw new Error("ffmpeg input closed before rendering finished");
+      if (!ffmpeg.stdin.write(png)) await Promise.race([
+        new Promise((resolve) => ffmpeg.stdin.once("drain", resolve)),
+        encodingDone!.then(() => { throw new Error("ffmpeg stopped before rendering finished"); }),
+      ]);
     } else {
       await writeFile(`${dir}/frames/${String(f).padStart(5, "0")}.png`, png);
     }
@@ -177,11 +194,13 @@ async function renderSequence(generated: GeneratedSimulation, all: Country[], di
   if (mix) await writeFile(`${dir}/audio.wav`, mix.wav(frames / fps));
   if (ffmpeg) {
     ffmpeg.stdin.end();
-    await exited(ffmpeg);
+    await encodingDone;
     if (mix) {
-      await exited(spawn("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-i", `${dir}/audio.wav`, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", `${dir}/video.mp4`], { stdio: "inherit" }));
-      await rm(silent);
-      await rm(`${dir}/audio.wav`);
+      await exited(spawn("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-i", `${dir}/audio.wav`, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", `${dir}/video.mp4`], { stdio: "inherit" }));
+      if (!values["keep-intermediates"]) {
+        await rm(silent);
+        await rm(`${dir}/audio.wav`);
+      }
     }
   } else {
     const audio = mix ? " -i audio.wav -c:a aac -b:a 192k -shortest" : "";
@@ -190,6 +209,17 @@ async function renderSequence(generated: GeneratedSimulation, all: Country[], di
   return frames;
 }
 
+/** A production export must not silently replace unavailable flags with placeholders. */
+async function preloadFlags(renderer: HeadlessRenderer, countries: Country[]): Promise<void> {
+  const { loaded, failed } = await renderer.preload(countries);
+  if (loaded !== countries.length || failed > 0) {
+    throw new Error(`Only ${loaded}/${countries.length} flags loaded. Retry the export when the flag CDN is available.`);
+  }
+}
+
 function exited(process: ReturnType<typeof spawn>): Promise<void> {
-  return new Promise((resolve, reject) => process.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}`)))));
+  return new Promise((resolve, reject) => {
+    process.once("error", reject);
+    process.once("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}`))));
+  });
 }

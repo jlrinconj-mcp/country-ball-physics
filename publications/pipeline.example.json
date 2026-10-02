@@ -1,0 +1,39 @@
+{
+  "source": {
+    "mode": "race",
+    "countries": ["BRA", "FRA", "JPN"],
+    "track": "sprint",
+    "language": "en",
+    "headline": "",
+    "maxDuration": 180
+  },
+  "variants": [
+    {
+      "id": "tiktok-pick-your-flag",
+      "hook": "PICK YOUR FLAG",
+      "caption": "Brazil, France or Japan? Pick your winner before the finish. #countryballs #physics #bolworld",
+      "playbackRate": 1,
+      "format": "9:16",
+      "audio": "original",
+      "destinations": ["tiktok"]
+    },
+    {
+      "id": "instagram-one-winner",
+      "hook": "3 COUNTRIES. ONE WINNER.",
+      "caption": "One track. Three flags. Who wins? Original countryball physics by bolworld. #countryballs #physics",
+      "playbackRate": 1.25,
+      "format": "9:16",
+      "audio": "original",
+      "destinations": ["instagram"]
+    },
+    {
+      "id": "facebook-fast-race",
+      "hook": "CAN YOUR COUNTRY WIN?",
+      "caption": "Brazil vs France vs Japan: predict the winner of this original bolworld physics challenge.",
+      "playbackRate": 1.5,
+      "format": "9:16",
+      "audio": "original",
+      "destinations": ["facebook"]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "brand": {
+    "name": "bolworld",
+    "status": "confirmed",
+    "audience": "global",
+    "languageTest": "en",
+    "accountCountry": null,
+    "handles": {
+      "youtube": null,
+      "tiktok": null,
+      "instagram": null,
+      "facebook": null
+    }
+  },
+  "publicationStatus": "draft",
+  "cadence": "Day 1 / Day 3 / Day 5 after accounts are ready; no uploads scheduled yet",
+  "format": "9:16",
+  "fps": 30,
+  "videoCodec": "h264",
+  "audio": "original synthesized effects",
+  "pieces": [
+    {
+      "id": "01-survival",
+      "seed": "global-launch-01",
+      "mode": "last-country-standing",
+      "track": "ring",
+      "countries": "USA,CAN,MEX,COL,BRA,ARG,PER,CHL,CRI,GBR,FRA,ESP,DEU,ITA,PRT,NLD,POL,NGA,EGY,MAR,ZAF,KEN,GHA,CHN,IND,JPN,KOR,IDN,PHL,SAU,AUS,NZL",
+      "headline": "32 FLAGS. ONE SURVIVOR.",
+      "playbackRate": 1.6,
+      "day": 1,
+      "utcTime": "13:00",
+      "hook": "Pick your flag before the first elimination.",
+      "cta": "Which country should challenge the winner?",
+      "title": "32 countries. One survivor. Pick your flag.",
+      "ctaOnVideo": "NEXT CHALLENGER?",
+      "chapterTitle": "32 flags.\nOne survivor.",
+      "ruleLines": [
+        "Stay inside the ring.",
+        "Escaping means elimination.",
+        "The last country inside wins."
+      ],
+      "watchLines": [
+        "The ring keeps rotating.",
+        "The opening gets wider.",
+        "Watch who stays inside."
+      ]
+    },
+    {
+      "id": "02-race",
+      "seed": "global-launch-02",
+      "mode": "race",
+      "track": "sprint",
+      "countries": "BRA,FRA,JPN",
+      "headline": "BRAZIL VS FRANCE VS JAPAN",
+      "playbackRate": 1,
+      "day": 3,
+      "utcTime": "20:00",
+      "hook": "Brazil, France or Japan? Pick before GO.",
+      "cta": "Which three countries race next?",
+      "title": "Brazil vs France vs Japan: who wins the race?",
+      "ctaOnVideo": "WHO RACES NEXT?",
+      "chapterTitle": "Brazil. France.\nJapan. One finish.",
+      "ruleLines": [
+        "Wait for the start gate.",
+        "Race down the track.",
+        "First over the finish wins."
+      ],
+      "watchLines": [
+        "A lead can disappear.",
+        "Ramps change the order.",
+        "Watch the next collision."
+      ]
+    },
+    {
+      "id": "03-plinko",
+      "seed": "global-launch-03",
+      "mode": "elimination-drop",
+      "track": "classic",
+      "countries": "USA,MEX,BRA,ARG,FRA,DEU,ESP,GBR,NGA,ZAF,EGY,JPN,IND,CHN,AUS,NZL",
+      "headline": "GREEN SURVIVES. RED IS OUT.",
+      "playbackRate": 1.25,
+      "day": 5,
+      "utcTime": "13:00",
+      "hook": "Green survives. Red is out. Pick your country.",
+      "cta": "Who should enter the next Plinko challenge?",
+      "title": "16 countries. Green survives. Red is out.",
+      "ctaOnVideo": "NEXT COUNTRY?",
+      "chapterTitle": "Green survives.\nRed is out.",
+      "ruleLines": [
+        "Drop through the board.",
+        "Green boxes keep you in.",
+        "Red boxes eliminate you."
+      ],
+      "watchLines": [
+        "A bounce changes the path.",
+        "Survivors play another round.",
+        "Only one country wins."
+      ]
+    }
+  ]
+}
