@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ it.runIf(process.env.PIPELINE_E2E === "1")("real simulation → three MP4 varian
   let now = new Date("2026-10-02T10:00:00Z");
   const store = new Store(resolve(directory, "managed"), () => now);
   await store.init();
+  await mkdir(resolve("output"), { recursive: true });
   const fixture = await apiFixture();
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   try {
