@@ -8,6 +8,7 @@ import type { DisplayOptions } from "./displayOptions";
 import type { FlagAtlas } from "./flagAtlas";
 import { FORMATS, safeRect } from "./formats";
 import { drawHud } from "./hudRenderer";
+import { countryName } from "./i18n";
 import type { HudTracker } from "./hudTracker";
 import { drawText } from "./text";
 import { THEMES, type RenderTheme } from "./theme";
@@ -235,7 +236,7 @@ export class CanvasRenderer {
       const x = lerp(ball.prevX, ball.x, alpha);
       const y = lerp(ball.prevY, ball.y, alpha);
       if (x < view.x || x > view.x + view.w || y < view.y || y > view.y + view.h) continue;
-      this.drawLabel(ball, x, y, display.labels === "name", theme);
+      this.drawLabel(ball, x, y, display.labels === "name", theme, display);
     }
   }
 
@@ -264,9 +265,9 @@ export class CanvasRenderer {
     }
   }
 
-  private drawLabel(ball: CountryBall, x: number, y: number, fullName: boolean, theme: RenderTheme): void {
+  private drawLabel(ball: CountryBall, x: number, y: number, fullName: boolean, theme: RenderTheme, display: DisplayOptions): void {
     const size = Math.min(30, Math.max(12, ball.radius * 0.55));
-    const text = fullName ? ball.name.toUpperCase() : ball.country.cca3;
+    const text = fullName ? countryName(ball.country, display.language).toUpperCase() : ball.country.cca3;
     drawText(this.ctx, text, x, y + ball.radius + size * 0.95, {
       size,
       weight: 800,

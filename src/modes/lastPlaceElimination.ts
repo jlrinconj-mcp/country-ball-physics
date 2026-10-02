@@ -276,7 +276,7 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
       const last = rounds.racing && !decided ? bubble()[0] : undefined;
       const out = cut > 1 ? `LAST ${cut} ARE ELIMINATED` : "LAST PLACE IS ELIMINATED";
       return {
-        headline: "LAST PLACE IS ELIMINATED",
+        headline: out,
         counterLabel: "COUNTRIES LEFT",
         counterValue: alive,
         showLeader: false,

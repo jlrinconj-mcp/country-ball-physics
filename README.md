@@ -44,6 +44,7 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 - **Output formats:** 9:16 (1080×1920), plus 4:5, 1:1 and 16:9, with platform safe areas (TikTok/Reels/Shorts overlays) and a toggle to show them.
 - **Minimal HUD on the canvas:** headline, counter, event line ("FRANCE IS OUT"), leader, timer, countdown and round banners, optional live ranking, winner and champion screens.
 - **Audio:** synthesized impacts, bounces, bumpers, eliminations, lead changes, finishes, countdown and victory. Pooled buffers, per-sound cooldowns, a collision budget and a voice cap.
+- **Video language:** English or Spanish for everything drawn on the video (titles, HUD, countdown "¡YA!", winner card, country names via the runtime's ICU data). Display-only: the same seed gives the same result in any language. `--lang=es` in the CLI sets the video text as well as the titles, captions and hashtags.
 - **Record video:** one click replays the simulation from tick 0 and downloads a full-resolution MP4 (or WebM), always with sound (even with sound effects off for live viewing).
 - **Content factory:** `generateSimulation({ mode, countries, track, seed, format })` plus a batch CLI that writes metadata, titles, captions, hashtags and thumbnails.
 - **Country selector:** search, presets (All, continents, Random 16/32/64), continent and region filters, manual picks, exclusions and territories.

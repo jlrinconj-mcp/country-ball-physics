@@ -3,6 +3,7 @@ import { TICK_DT } from "@/engine/physicsWorld";
 import type { Frame } from "./canvasRenderer";
 import type { FlagAtlas } from "./flagAtlas";
 import { safeRect, type FormatSpec } from "./formats";
+import { countryName, feedLine, translate, winsLine, type Language } from "./i18n";
 import { drawText, font } from "./text";
 import type { RenderTheme } from "./theme";
 
@@ -27,12 +28,15 @@ export function drawHud(
   const now = Math.max(0, (sim.tick - 1 + frame.alpha) * TICK_DT);
   const info = sim.rules.hud();
   const textWidth = centredWidth(format);
+  const lang = display.language;
+  const t = (text: string) => translate(text, lang);
   const unit = Math.min(width, format.height) / 1080;
   const shadow = theme.textShadow;
 
   if (sim.status === "finished" && sim.winner && sim.finishedTick !== null) {
     // The winner card owns the screen; the live HUD would only clash with it.
-    drawWinner(ctx, sim.winner, now - sim.finishedTick * TICK_DT, format, unit, theme, atlas, sim.decidedBy, frame.overlay?.winnerTitle ?? "WINNER", frame.overlay?.status);
+    const context = frame.overlay?.status;
+    drawWinner(ctx, sim.winner, now - sim.finishedTick * TICK_DT, format, unit, theme, atlas, sim.decidedBy, t(frame.overlay?.winnerTitle ?? "WINNER"), context && t(context), lang);
     return;
   }
 
@@ -40,7 +44,7 @@ export function drawHud(
   const status = [frame.overlay?.status, info.status].filter(Boolean).join(" · ");
   if (status) {
     y += 34 * unit;
-    drawText(ctx, status, width / 2, y, {
+    drawText(ctx, t(status), width / 2, y, {
       size: 30 * unit,
       color: theme.textMuted,
       letterSpacing: 4 * unit,
@@ -49,7 +53,7 @@ export function drawHud(
   }
 
   y += 70 * unit;
-  drawText(ctx, (display.headline || info.headline).toUpperCase(), width / 2, y, {
+  drawText(ctx, (display.headline || t(info.headline)).toUpperCase(), width / 2, y, {
     size: 66 * unit,
     weight: 900,
     color: theme.text,
@@ -58,26 +62,26 @@ export function drawHud(
   });
 
   y += 58 * unit;
-  drawCounter(ctx, `${info.counterLabel}: `, String(info.counterValue), width / 2, y, 40 * unit, theme, textWidth);
+  drawCounter(ctx, `${t(info.counterLabel)}: `, String(info.counterValue), width / 2, y, 40 * unit, theme, textWidth);
 
   // One line under the counter: the latest event, otherwise the leader (or
   // whoever the mode calls out, e.g. the country in last place).
   const slotY = y + 54 * unit;
-  const showedFeed = display.feed && sim.status !== "finished" && drawFeed(ctx, frame, width / 2, slotY, unit, theme, atlas, now, textWidth);
+  const showedFeed = display.feed && sim.status !== "finished" && drawFeed(ctx, frame, width / 2, slotY, unit, theme, atlas, now, textWidth, lang);
   const spot = frame.camera.spotlight;
   if (!showedFeed && spot && sim.status === "running") {
     // Leader ↔ last camera: name whoever is on screen.
     const leader = spot.role === "leader";
-    drawLeader(ctx, spot.ball, width / 2, slotY, unit, theme, atlas, 0, leader ? "LEADER  " : "LAST PLACE  ", leader ? theme.accent : DANGER);
+    drawLeader(ctx, spot.ball, width / 2, slotY, unit, theme, atlas, 0, lang, `${t(leader ? "LEADER" : "LAST PLACE")}  `, leader ? theme.accent : DANGER);
   } else if (!showedFeed && info.featured && sim.status === "running") {
     const { label, ball, tone } = info.featured;
-    drawLeader(ctx, ball, width / 2, slotY, unit, theme, atlas, 0, `${label}  `, tone === "danger" ? DANGER : theme.text);
+    drawLeader(ctx, ball, width / 2, slotY, unit, theme, atlas, 0, lang, `${t(label)}  `, tone === "danger" ? DANGER : theme.text);
   } else if (!showedFeed && info.showLeader && sim.leader && sim.status === "running") {
     const pulse = Math.max(0, 1 - (now - frame.hud.leaderTick * TICK_DT) / 0.6);
-    drawLeader(ctx, sim.leader, width / 2, slotY, unit, theme, atlas, pulse);
+    drawLeader(ctx, sim.leader, width / 2, slotY, unit, theme, atlas, pulse, lang, `${t("LEADER")}  `);
   }
   if (info.eliminated?.length && sim.status === "running") {
-    drawEliminated(ctx, info.eliminated, width / 2, slotY + 44 * unit, unit, atlas, textWidth);
+    drawEliminated(ctx, info.eliminated, width / 2, slotY + 44 * unit, unit, atlas, textWidth, t(`OUT ${info.eliminated.length}`));
   }
 
   // Title cards and countdowns sit below the start line wherever the camera
@@ -89,11 +93,11 @@ export function drawHud(
     : info.title.worldY !== undefined
       ? frame.camera.worldToScreen(0, info.title.worldY).y
       : below(safe.y + safe.h * 0.68, 110 * unit);
-  if (info.title && titleY !== null) drawTitle(ctx, info.title, titleY, format, unit, theme);
+  if (info.title && titleY !== null) drawTitle(ctx, { text: t(info.title.text), sub: info.title.sub && t(info.title.sub) }, titleY, format, unit, theme);
   if (info.banner) {
     // Under a title card the countdown moves down out of its way.
     const bannerY = titleY !== null ? Math.max(safe.y + safe.h * 0.86, titleY + 230 * unit) : below(safe.y + safe.h * 0.55, 250 * unit);
-    drawBanner(ctx, info.banner, format, unit, theme, now, Math.min(bannerY, safe.y + safe.h - 90 * unit));
+    drawBanner(ctx, t(info.banner), format, unit, theme, now, Math.min(bannerY, safe.y + safe.h - 90 * unit));
   }
 
   // Timer, top-left of the safe area.
@@ -106,7 +110,7 @@ export function drawHud(
   });
 
   if (display.ranking && sim.status !== "finished") {
-    drawRanking(ctx, sim.rules.rank().slice(0, 5), safe.x + 8 * unit, y + 70 * unit, unit, theme, atlas);
+    drawRanking(ctx, sim.rules.rank().slice(0, 5), safe.x + 8 * unit, y + 70 * unit, unit, theme, atlas, lang);
   }
 
 
@@ -153,11 +157,12 @@ function drawLeader(
   theme: RenderTheme,
   atlas: FlagAtlas,
   pulse: number,
-  label = "LEADER  ",
+  lang: Language,
+  label: string,
   color = theme.text,
 ): void {
   const size = 36 * unit;
-  const text = leader.name.toUpperCase();
+  const text = countryName(leader.country, lang).toUpperCase();
   ctx.font = font(size, 900);
   const labelW = ctx.measureText(label).width;
   const textW = Math.min(ctx.measureText(text).width, 560 * unit);
@@ -180,10 +185,10 @@ function drawEliminated(
   unit: number,
   atlas: FlagAtlas,
   maxWidth: number,
+  label: string,
 ): void {
   const icon = 15 * unit;
   const step = icon * 2 + 8 * unit;
-  const label = `OUT ${balls.length}`;
   const size = 24 * unit;
   ctx.font = font(size, 800);
   const labelW = ctx.measureText(label).width + 14 * unit;
@@ -257,13 +262,14 @@ function drawRanking(
   unit: number,
   theme: RenderTheme,
   atlas: FlagAtlas,
+  lang: Language,
 ): void {
   const row = 50 * unit;
   balls.forEach((ball, i) => {
     const cy = y + i * row;
     drawText(ctx, `${i + 1}`, x + 14 * unit, cy + 11 * unit, { size: 28 * unit, color: theme.textMuted });
     drawBallIcon(ctx, atlas, ball, x + 52 * unit, cy, 19 * unit);
-    drawText(ctx, ball.name.toUpperCase(), x + 82 * unit, cy + 11 * unit, {
+    drawText(ctx, countryName(ball.country, lang).toUpperCase(), x + 82 * unit, cy + 11 * unit, {
       size: 28 * unit,
       color: theme.text,
       align: "left",
@@ -285,13 +291,14 @@ function drawFeed(
   atlas: FlagAtlas,
   now: number,
   maxWidth: number,
+  lang: Language,
 ): boolean {
   const item = frame.hud.feed.findLast((f) => f.kind !== "leader");
   if (!item) return false;
   const age = now - item.tick * TICK_DT;
   if (age < 0 || age > FEED_SECONDS) return false;
   const size = 32 * unit;
-  const text = `${item.ball.name.toUpperCase()} ${item.kind === "finished" ? `FINISHED #${item.ball.place}` : "IS OUT"}`;
+  const text = feedLine(countryName(item.ball.country, lang).toUpperCase(), { kind: item.kind === "finished" ? "finished" : "eliminated", place: item.ball.place }, lang);
   ctx.font = font(size, 800);
   const textW = Math.min(ctx.measureText(text).width, maxWidth - 60 * unit);
   const icon = 18 * unit;
@@ -335,7 +342,8 @@ function drawWinner(
   atlas: FlagAtlas,
   decidedBy: string,
   title: string,
-  context?: string,
+  context: string | undefined,
+  lang: Language,
 ): void {
   const { width, height } = format;
   const safe = safeRect(format);
@@ -365,7 +373,7 @@ function drawWinner(
     color: theme.accent,
     letterSpacing: 10 * unit,
   });
-  drawText(ctx, `${winner.name.toUpperCase()} WINS`, width / 2, cy + full + 110 * unit, {
+  drawText(ctx, winsLine(countryName(winner.country, lang).toUpperCase(), lang), width / 2, cy + full + 110 * unit, {
     size: 92 * unit,
     weight: 900,
     color: theme.text,
@@ -373,7 +381,7 @@ function drawWinner(
     shadow: theme.textShadow,
   });
   if (decidedBy === "timeout") {
-    drawText(ctx, "DECIDED AT THE TIME LIMIT", width / 2, cy + full + 170 * unit, {
+    drawText(ctx, translate("DECIDED AT THE TIME LIMIT", lang), width / 2, cy + full + 170 * unit, {
       size: 28 * unit,
       color: theme.textMuted,
       letterSpacing: 3 * unit,

@@ -1,5 +1,6 @@
 import type { CameraMode } from "@/engine/simulation";
 import type { VideoFormat } from "./formats";
+import type { Language } from "./i18n";
 import type { ThemeId } from "./theme";
 
 export type LabelMode = "none" | "code" | "name";
@@ -23,6 +24,8 @@ export interface DisplayOptions {
   speed: number;
   audio: boolean;
   volume: number;
+  /** Language of the text on the video (titles, HUD, winner card, names). */
+  language: Language;
 }
 
 export const DEFAULT_DISPLAY: DisplayOptions = {
@@ -40,4 +43,5 @@ export const DEFAULT_DISPLAY: DisplayOptions = {
   speed: 1,
   audio: false,
   volume: 0.6,
+  language: "en",
 };

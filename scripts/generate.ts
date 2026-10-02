@@ -3,7 +3,7 @@
  *
  *   npm run generate -- --count=10 --mode=race --countries=europe
  *   npm run generate -- --mode=tournament --countries=all --seed=cup-2026
- *   npm run generate -- --mode=random --count=50 --seed=batch --lang=es
+ *   npm run generate -- --mode=random --count=50 --seed=batch --lang=es   # Spanish titles and video text
  *   npm run generate -- --mode=marble-race --frames=30          # PNG sequence
  *   npm run generate -- --mode=race --video                      # MP4 with sound; needs ffmpeg on PATH
  *   npm run generate -- --mode=race --video --no-audio           # silent MP4
@@ -70,6 +70,7 @@ for (let i = 0; i < count; i++) {
     format: values.format as VideoFormat,
     participants: values.participants ? Number(values.participants) : undefined,
     tournamentSize: values.size ? (Number(values.size) as TournamentSize) : undefined,
+    language,
     elimination: values.elimination === "single" ? "single" : values.elimination === "batch" ? "batch" : undefined,
   };
   const plan = planSimulation(request, countries);

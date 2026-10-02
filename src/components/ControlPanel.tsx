@@ -12,6 +12,7 @@ import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
 import { PresetChips, type SelectionState } from "./CountrySelector";
 import { TrackEditor } from "./TrackEditor";
+import { LANGUAGES } from "@/render/i18n";
 import { Button, Field, Section, Segmented, Select, Slider, Toggle } from "./ui";
 
 export const CAMERA_OPTIONS: { value: CameraMode; label: string }[] = [
@@ -235,6 +236,7 @@ export function ControlPanel({
           ]}
           onChange={(labels) => show({ labels })}
         />
+        <Segmented label="Video language" value={display.language} options={LANGUAGES.map((l) => ({ value: l.id, label: l.label }))} onChange={(language) => show({ language })} />
         <Toggle label="Countryball eyes" checked={display.eyes} onChange={(eyes) => show({ eyes })} />
         <Toggle label="Show safe areas" checked={display.safeArea} onChange={(safeArea) => show({ safeArea })} />
       </Section>

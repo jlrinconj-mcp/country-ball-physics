@@ -2,7 +2,8 @@ import { createRandom } from "@/engine/random";
 import type { ModeId } from "@/engine/types";
 import type { SimulationPlan } from "./plan";
 
-export type Language = "en" | "es";
+export type { Language } from "@/render/i18n";
+import type { Language } from "@/render/i18n";
 
 export interface ContentOutcome {
   winnerName: string;

@@ -9,6 +9,7 @@ import { DEFAULT_DISPLAY, type DisplayOptions } from "@/render/displayOptions";
 import { getMap } from "@/tracks/maps";
 import { MIDDLE_MODULES } from "@/tracks/types";
 import type { VideoFormat } from "@/render/formats";
+import type { Language } from "@/render/i18n";
 
 export type ContentMode = ModeId | "tournament" | "random";
 
@@ -43,6 +44,8 @@ export interface GenerateRequest {
   map?: string;
   /** Time limit override, seconds. */
   maxDuration?: number;
+  /** Language of the text on the video (default English). */
+  language?: Language;
   /** Last Place Elimination: several out a round (default) or one. */
   elimination?: "batch" | "single";
 }
@@ -122,6 +125,7 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
     ...DEFAULT_DISPLAY,
     format: request.format ?? "9:16",
     camera: definition.defaultCamera,
+    language: request.language ?? "en",
   };
   return {
     request,
