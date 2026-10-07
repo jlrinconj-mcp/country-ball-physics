@@ -19,12 +19,12 @@ import type { ChatMessage } from "@/live/commands";
 import { LiveSession, type LiveOptions, type LiveView } from "@/live/session";
 import { createSource, type ChatSource, type SourceConfig, type SourceStatus } from "@/live/sources";
 import type { LiveFrame } from "@/render/liveRenderer";
-import { CanvasRecorder, downloadBlob } from "./recorder";
+import { localVideoExporter, VideoExportNotFoundError } from "@/export/client";
+import { validateExportRequest } from "@/export/configuration";
+import type { VideoExport, VideoExportAdapter } from "@/export/types";
 
 /** Keep animating this long after the winner is declared, then idle. */
 const OUTRO_TICKS = 6 * TICK_RATE;
-/** Recording keeps going this long after the result (winner animation). */
-const RECORD_TAIL_TICKS = 3.5 * TICK_RATE;
 /** Pause between tournament heats (the winner card stays up meanwhile). */
 const BETWEEN_HEATS_TICKS = 4 * TICK_RATE;
 const PUBLISH_INTERVAL_MS = 200;
@@ -60,6 +60,7 @@ export interface ControllerSnapshot {
   replay: "identical" | "different" | null;
   tournament: TournamentSummary | null;
   recording: boolean;
+  videoExport: VideoExport | null;
   /** Smoothed display frame rate (0 until measured). */
   fps: number;
   live: LiveSnapshot | null;
@@ -88,6 +89,7 @@ export const EMPTY_SNAPSHOT: ControllerSnapshot = {
   replay: null,
   tournament: null,
   recording: false,
+  videoExport: null,
   fps: 0,
   live: null,
 };
@@ -120,7 +122,16 @@ export class SimulationController {
   private overlay: HudOverlay | undefined;
   private readonly audio = new AudioEngine();
   private sounds: { afterStep(): void; detach(): void } | null = null;
-  private recorder: CanvasRecorder | null = null;
+  private recording = false;
+  private videoExport: VideoExport | null = null;
+  private exportAbort: AbortController | null = null;
+  private exportToken = 0;
+  private exportRevision = 0;
+  private exportCreation: Promise<VideoExport> | null = null;
+  private pauseOperation: Promise<void> = Promise.resolve();
+  private pendingPause = 0;
+  private deleting = false;
+  private error: string | null = null;
   private fps = 0;
   private replay: ControllerSnapshot["replay"] = null;
   private live: LiveSession | null = null;
@@ -132,7 +143,7 @@ export class SimulationController {
   private liveMessages: ChatMessage[] = [];
   private countryIndex = new Map<string, Country>();
 
-  constructor() {
+  constructor(private readonly exporter: VideoExportAdapter = localVideoExporter) {
     this.loop = new SimulationLoop({
       step: () => this.step(),
       render: (alpha, dt) => this.render(alpha, dt),
@@ -164,6 +175,13 @@ export class SimulationController {
   }
 
   dispose(): void {
+    ++this.loadToken;
+    ++this.exportToken;
+    this.exportAbort?.abort();
+    this.disconnectChat();
+    this.saveScores();
+    this.live = null;
+    this.liveBase = null;
     this.detach();
     this.disposeSimulation();
     this.audio.dispose();
@@ -176,7 +194,7 @@ export class SimulationController {
     if (!canvas) return;
     const format = FORMATS[this.display.format];
     // Never render above the target output resolution; record at exactly it.
-    const scale = this.recorder ? format.width / Math.max(1, cssWidth) : Math.min(devicePixelRatio, format.width / Math.max(1, cssWidth));
+    const scale = Math.min(devicePixelRatio, format.width / Math.max(1, cssWidth));
     const width = Math.max(1, Math.round(cssWidth * scale));
     const height = Math.max(1, Math.round((width * format.height) / format.width));
     if (canvas.width !== width || canvas.height !== height) {
@@ -186,31 +204,40 @@ export class SimulationController {
   }
 
   setDisplay(display: DisplayOptions): void {
+    if (this.recording) return;
     const formatChanged = display.format !== this.display.format || display.hud !== this.display.hud;
     this.display = display;
     this.audio.setVolume(display.volume);
     if (display.audio && !this.audio.enabled) {
-      void this.audio.enable().then(() => this.bindAudio());
-    } else if (!display.audio && this.audio.enabled) {
+      void this.audio.enable().then(() => {
+        if (this.display.audio && this.audio.enabled) this.bindAudio();
+      });
+    } else if (!display.audio) {
       this.audio.disable();
       this.bindAudio();
     }
-    if (!this.recorder && !this.live) this.loop.speed = display.speed;
+    if (!this.recording && !this.live) this.loop.speed = display.speed;
     this.camera.options = { mode: display.camera, dynamicZoom: display.dynamicZoom };
     this.applyViewport();
     if (formatChanged && this.sim) this.camera.snap(this.sim);
   }
 
   /**
-   * Build and start a simulation (or a whole tournament). Flags are preloaded
-   * first, with a timeout, so the video never starts on placeholders.
+   * Prepare a simulation or tournament. A preview tolerates flags still
+   * loading; Play requires every real flag before it creates a video job.
    */
-  async load(config: SimulationConfig, countries: Country[]): Promise<void> {
+  async load(config: SimulationConfig, countries: Country[], paused = false, requireFlags = false): Promise<void> {
+    if (this.recording && !requireFlags) return;
     const token = ++this.loadToken;
+    this.loop.paused = true;
+    this.loop.reset();
+    this.disposeSimulation();
+    this.tournament = null;
+    this.error = null;
     if (countries !== this.countries) this.countryIndex = new Map(countries.map((c) => [c.cca3, c]));
     this.countries = countries;
     this.baseConfig = config;
-    this.update({ ...EMPTY_SNAPSHOT, phase: "loading", config });
+    this.update({ ...EMPTY_SNAPSHOT, phase: "loading", paused: true, config, recording: this.recording, videoExport: this.videoExport });
     try {
       let first: SimulationConfig;
       let tournament: Tournament | null = null;
@@ -226,72 +253,264 @@ export class SimulationController {
         first = config;
         entrants = selectParticipants(config, countries);
       }
-      await this.atlas.preload(entrants, 6000);
+      const flags = await this.atlas.preload(entrants, requireFlags ? 20000 : 5000);
+      if (requireFlags && (flags.loaded !== entrants.length || flags.failed)) throw new Error("No se cargaron todas las banderas. Reintenta cuando estén disponibles.");
       if (token !== this.loadToken) return;
       this.tournament = tournament;
-      this.startSimulation(first);
+      this.startSimulation(first, paused);
     } catch (error) {
+      if (token !== this.loadToken) return;
       console.error(error);
-      this.update({ ...EMPTY_SNAPSHOT, phase: "error", config, error: error instanceof Error ? error.message : String(error) });
+      this.error = error instanceof Error ? error.message : String(error);
+      this.update({ ...EMPTY_SNAPSHOT, phase: "error", paused: true, config, recording: this.recording, videoExport: this.videoExport, error: this.error });
     }
+  }
+
+  /** Animate the draft without creating a video, so it can be reviewed first. */
+  async preview(config: SimulationConfig, countries: Country[]): Promise<void> {
+    if (this.recording || this.live) return;
+    this.videoExport = null;
+    await this.load(config, countries);
   }
 
   /** Same config, same seed, from tick 0: an identical replay (whole tournament too). */
   restart(): Promise<void> {
+    if (this.recording || this.live) return Promise.resolve();
     const config = this.baseConfig ?? this.snapshot.config;
     if (!config) return Promise.resolve();
-    return this.load(config, this.countries);
+    this.videoExport = null;
+    return this.load(config, this.countries, true);
   }
 
   get canRecord(): boolean {
-    return CanvasRecorder.supported();
+    return typeof window !== "undefined" && typeof fetch !== "undefined";
   }
 
   /**
-   * Replay the current simulation from tick 0 and record it at full output
-   * resolution and 1× speed. Stops and downloads after the winner screen.
+   * Export the current run, including recorded live inputs, through the same
+   * persistent workflow as Play. Kept for existing runtime integrations.
    */
   async record(): Promise<void> {
     const config = this.baseConfig;
-    if (!config || !this.canvas || this.recorder || !CanvasRecorder.supported()) return;
-    // Videos always get sound (the click that starts a recording lets the
-    // browser start audio), even with sound effects off for live viewing.
-    if (!this.audio.enabled) await this.audio.enable();
-    await this.load(config, this.countries);
-    const canvas = this.canvas;
-    if (!canvas) return;
-    this.recorder = new CanvasRecorder();
-    this.loop.speed = 1;
-    this.applyViewport();
-    this.recorder.start(canvas, 60, this.audio.stream() ?? undefined);
+    if (config) await this.playAndRecord(config, this.countries);
+  }
+
+  /** Play commits the draft once and starts a persistent, local MP4 export. */
+  async playAndRecord(config: SimulationConfig, countries: Country[]): Promise<void> {
+    if (this.recording || this.live || this.deleting) return;
+    const token = ++this.exportToken;
+    try {
+      const request = validateExportRequest({ config, display: this.display }, countries);
+      this.exportAbort?.abort();
+      this.exportCreation = null;
+      this.pauseOperation = Promise.resolve();
+      this.pendingPause = 0;
+      ++this.exportRevision;
+      this.error = null;
+      this.recording = true;
+      this.videoExport = null;
+      await this.load(request.config, countries, true, true);
+      if (token !== this.exportToken) return;
+      if (this.snapshot.phase === "error") throw new Error(this.snapshot.error ?? "No se pudo iniciar la simulación.");
+      const creation = this.exporter.create(request);
+      this.exportCreation = creation;
+      const video = await creation;
+      if (token !== this.exportToken) return;
+      this.exportCreation = null;
+      this.loop.speed = 1;
+      this.applyExport(video);
+      if (this.recording) this.startExportMonitor(video.id, token);
+    } catch (error) {
+      if (token !== this.exportToken) return;
+      this.exportCreation = null;
+      this.recording = false;
+      this.loop.paused = true;
+      this.loop.speed = this.display.speed;
+      this.loop.reset();
+      this.error = error instanceof Error ? error.message : String(error);
+      this.publish(true);
+    }
+  }
+
+  private startExportMonitor(id: string, token: number): void {
+    this.exportAbort?.abort();
+    this.exportAbort = new AbortController();
+    void this.monitorExport(id, token, this.exportAbort.signal);
+  }
+
+  private async monitorExport(id: string, token: number, signal: AbortSignal): Promise<void> {
+    while (!signal.aborted && token === this.exportToken) {
+      const revision = this.exportRevision;
+      try {
+        const video = await this.exporter.get(id, signal);
+        if (signal.aborted || token !== this.exportToken || this.videoExport?.id !== id) return;
+        // An older poll must never undo a pause/resume request or deletion.
+        if (revision === this.exportRevision && this.pendingPause === 0) {
+          this.applyExport(video);
+          if (!this.recording) return;
+        }
+      } catch (error) {
+        if (signal.aborted || token !== this.exportToken) return;
+        if (error instanceof VideoExportNotFoundError) {
+          this.markExportMissing(id);
+          return;
+        }
+        this.error = error instanceof Error ? error.message : String(error);
+        this.publish(true);
+      }
+      await new Promise<void>(resolve => {
+        const finish = () => { clearTimeout(timer); signal.removeEventListener("abort", finish); resolve(); };
+        const timer = setTimeout(finish, 1000);
+        signal.addEventListener("abort", finish, { once: true });
+      });
+    }
+  }
+
+  /** Pause both the canvas and its encoder; preview pauses remain local. */
+  async setPaused(paused: boolean): Promise<void> {
+    if (this.deleting || this.snapshot.phase === "loading") return;
+    const video = this.videoExport;
+    if (!this.recording || !video) {
+      this.loop.paused = paused || this.outroFinished() || video?.status === "complete" || video?.status === "failed";
+      this.loop.reset();
+      this.publish(true);
+      return;
+    }
+    const token = this.exportToken;
+    const revision = ++this.exportRevision;
+    this.loop.paused = paused || this.outroFinished();
+    this.loop.reset();
+    ++this.pendingPause;
+    this.publish(true);
+    const operation = this.pauseOperation.then(async () => {
+      if (token !== this.exportToken || this.videoExport?.id !== video.id) return;
+      try {
+        const updated = await this.exporter.setPaused(video.id, paused);
+        if (token !== this.exportToken || this.videoExport?.id !== video.id) return;
+        if (revision !== this.exportRevision) {
+          // Retain the last acknowledged server state for rollback if the
+          // next queued control request fails, without undoing its canvas state.
+          this.videoExport = updated;
+          return;
+        }
+        this.error = null;
+        this.applyExport(updated);
+      } catch (error) {
+        if (token !== this.exportToken || revision !== this.exportRevision) return;
+        if (error instanceof VideoExportNotFoundError) {
+          this.markExportMissing(video.id);
+          throw error;
+        }
+        this.loop.paused = this.videoExport?.status === "paused" || this.outroFinished();
+        this.error = error instanceof Error ? error.message : String(error);
+        this.publish(true);
+        throw error;
+      } finally {
+        if (token === this.exportToken) --this.pendingPause;
+      }
+    });
+    this.pauseOperation = operation.catch(() => {});
+    await operation;
+  }
+
+  /** Cancel creation or delete an active job, then return to its editable draft. */
+  async deleteRecording(): Promise<void> {
+    if ((!this.recording && !this.exportCreation) || this.deleting) return;
+    this.deleting = true;
+    const token = ++this.exportToken;
+    ++this.loadToken;
+    ++this.exportRevision;
+    this.exportAbort?.abort();
+    const creation = this.exportCreation;
+    this.exportCreation = null;
+    const config = this.baseConfig;
+    let video = this.videoExport;
+    this.loop.paused = true;
+    this.loop.reset();
+    this.publish(true);
+    try {
+      if (creation) {
+        // A rejected create has no job to remove; a successful one must be
+        // deleted even if the user cancelled before its response arrived.
+        video = await creation.catch(() => null);
+      }
+      if (video) await this.exporter.delete(video.id);
+      if (token !== this.exportToken) return;
+      this.recording = false;
+      this.videoExport = null;
+      this.pendingPause = 0;
+      this.loop.speed = this.display.speed;
+      this.error = null;
+      if (config) await this.load(config, this.countries, true);
+      else this.update({ ...EMPTY_SNAPSHOT });
+    } catch (error) {
+      if (token !== this.exportToken) return;
+      if (error instanceof VideoExportNotFoundError && video) {
+        this.markExportMissing(video.id);
+        return;
+      }
+      this.error = error instanceof Error ? error.message : String(error);
+      if (video) {
+        this.applyExport(video);
+        if (this.recording) this.startExportMonitor(video.id, token);
+      } else {
+        this.recording = false;
+        this.loop.speed = this.display.speed;
+        this.publish(true);
+      }
+      throw error;
+    } finally {
+      if (token === this.exportToken) this.deleting = false;
+    }
+  }
+
+  /** Remove a deleted library entry from the current view as well. */
+  forgetExport(id: string): void {
+    if (this.videoExport?.id !== id) return;
+    this.clearExportReference();
     this.publish(true);
   }
 
-  async stopRecording(): Promise<void> {
-    const recorder = this.recorder;
-    if (!recorder) return;
-    const blob = await recorder.stop();
-    this.recorder = null;
+  private clearExportReference(): void {
+    ++this.exportToken;
+    ++this.exportRevision;
+    this.exportAbort?.abort();
+    this.recording = false;
+    this.videoExport = null;
+    this.pendingPause = 0;
+    this.loop.paused = true;
     this.loop.speed = this.display.speed;
-    if (!this.display.audio && this.audio.enabled) {
-      this.audio.disable();
-      this.bindAudio();
-    }
-    this.applyViewport();
-    this.publish(true);
-    if (blob.size > 0) {
-      const name = (this.baseConfig?.seed ?? "simulation").replace(/[^a-z0-9-_]+/gi, "_");
-      downloadBlob(blob, `country-balls-${name}.${recorder.extension}`);
-    }
+    this.loop.reset();
+    this.error = null;
   }
 
-  setPaused(paused: boolean): void {
-    this.loop.paused = paused;
+  private markExportMissing(id: string): void {
+    if (this.videoExport && this.videoExport.id !== id) return;
+    this.clearExportReference();
+    this.deleting = false;
+    this.error = "Esta grabación fue eliminada desde otra ventana. Puedes crear una nueva.";
     this.publish(true);
+  }
+
+  private applyExport(video: VideoExport): void {
+    this.videoExport = video;
+    this.recording = video.status === "queued" || video.status === "recording" || video.status === "paused";
+    this.loop.paused = !this.recording || video.status === "paused" || this.outroFinished();
+    if (!this.recording) {
+      this.loop.speed = this.display.speed;
+      this.loop.reset();
+    }
+    if (video.error) this.error = video.error;
+    this.publish(true);
+  }
+
+  private outroFinished(): boolean {
+    return !!this.sim && this.sim.finishedTick !== null &&
+      (!this.tournament || this.tournament.finished) && this.sim.tick - this.sim.finishedTick >= OUTRO_TICKS;
   }
 
   stepOnce(): void {
-    if (!this.sim) return;
+    if (!this.sim || this.recording) return;
     this.loop.paused = true;
     this.loop.stepOnce();
     this.publish(true);
@@ -356,7 +575,9 @@ export class SimulationController {
     this.liveSource = source;
     this.liveStatus = { state: "connecting", label: source.label };
     source.connect(
-      (message) => this.chat(message),
+      (message) => {
+        if (this.liveSource === source) this.chat(message);
+      },
       (status) => {
         if (this.liveSource !== source) return;
         this.liveStatus = { ...status, label: source.label };
@@ -443,7 +664,7 @@ export class SimulationController {
 
   // ── Internals ───────────────────────────────────────────────────────────
 
-  private startSimulation(config: SimulationConfig): void {
+  private startSimulation(config: SimulationConfig, paused = false): void {
     const sim = createSimulation(config, this.countries);
     this.disposeSimulation();
     this.sim = sim;
@@ -456,7 +677,7 @@ export class SimulationController {
     this.bindAudio();
     this.applyViewport();
     this.camera.snap(sim);
-    this.loop.paused = false;
+    this.loop.paused = paused;
     this.loop.reset();
     this.publish(true);
   }
@@ -477,8 +698,11 @@ export class SimulationController {
         this.startSimulation(next.config);
         return true;
       }
-      if (this.recorder && !next && since > RECORD_TAIL_TICKS) void this.stopRecording();
-      if (since > OUTRO_TICKS) return false;
+      if (since >= OUTRO_TICKS) {
+        this.loop.paused = true;
+        this.publish(true);
+        return false;
+      }
     }
     sim.step();
     this.sounds?.afterStep();
@@ -554,6 +778,7 @@ export class SimulationController {
     const live: LiveSnapshot | null = this.live ? { view: this.live.view(), chat: { ...this.liveStatus }, messages: [...this.liveMessages] } : null;
     if (!sim) {
       if (live) this.update({ ...this.snapshot, live });
+      else this.update({ ...this.snapshot, paused: this.loop.paused, recording: this.recording, videoExport: this.videoExport, error: this.error });
       return;
     }
     const row = (b: Simulation["balls"][number]): RankingRow => ({
@@ -564,8 +789,10 @@ export class SimulationController {
       status: b.status,
       place: b.place,
     });
+    const exportStatus = this.live ? null : this.videoExport?.status;
     this.update({
-      phase: sim.status === "finished" ? "finished" : "running",
+      phase: exportStatus === "failed" ? "error" :
+        exportStatus === "complete" || (sim.status === "finished" && (!this.tournament || this.tournament.finished)) ? "finished" : "running",
       paused: this.loop.paused,
       time: sim.time,
       alive: sim.aliveCount,
@@ -576,10 +803,11 @@ export class SimulationController {
       result: sim.result,
       config: this.baseConfig ?? sim.config,
       scenario: sim.scenario,
-      error: null,
+      error: this.error,
       replay: this.replay,
       tournament: this.tournament?.summary() ?? null,
-      recording: this.recorder !== null,
+      recording: this.recording,
+      videoExport: this.videoExport,
       fps: Math.round(this.fps),
       live,
     });

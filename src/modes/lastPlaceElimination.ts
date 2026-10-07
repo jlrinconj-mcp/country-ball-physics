@@ -1,5 +1,6 @@
 import type { CountryBall } from "@/entities/CountryBall";
 import { TICK_RATE } from "@/engine/physicsWorld";
+import type { Random } from "@/engine/random";
 import type { ModeDefinition, ModeHud, ModeRules, Simulation } from "@/engine/simulation";
 import { spawnPoints } from "@/engine/spawn";
 import { findMap, listMaps, MAPS, type MapDefinition } from "@/tracks/maps";
@@ -74,11 +75,29 @@ export function roundTitle(round: number, remaining: number): string {
   return `ROUND ${round}`;
 }
 
+/** Visit every short map before repeating; mix arenas into the track rounds. */
+export function continuousMapRotation(first: MapDefinition, random: Random): () => MapDefinition {
+  const maps = listMaps().filter((map) => !map.epic);
+  let current = first;
+  let remaining = random.shuffle(maps.filter((map) => map.id !== first.id));
+  return () => {
+    if (remaining.length === 0) remaining = random.shuffle(maps);
+    // Prefer a change of course type while there are both types left. This
+    // brings the rings into short competitions as well as longer sessions.
+    const differentType = remaining.findIndex((map) => !!map.arena !== !!current.arena);
+    const differentMap = remaining.findIndex((map) => map.id !== current.id);
+    const index = differentType >= 0 ? differentType : Math.max(0, differentMap);
+    current = remaining.splice(index, 1)[0] as MapDefinition;
+    return current;
+  };
+}
+
 export function createLastPlaceRules(sim: Simulation): ModeRules {
-  const map = mapFor(sim.scenario, sim.config.map);
-  const course = courseFor(sim, map);
-  const { spawn } = course;
+  let map = mapFor(sim.scenario, sim.config.map);
+  let course = courseFor(sim, map);
+  let { spawn } = course;
   const seeded = sim.random.fork("rounds");
+  const nextMap = sim.config.continuous ? continuousMapRotation(map, seeded.fork("maps")) : null;
   const forces = sim.random.fork("forces");
   const total = sim.balls.length;
 
@@ -146,6 +165,18 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
     limit: Infinity,
     result: RESULT,
     onSetup(round) {
+      if (round > 1 && nextMap) {
+        map = nextMap();
+        sim.replaceLayout(mapLayout(map, {
+          scenario: map.id,
+          map: map.id,
+          random: sim.random.fork("layout"),
+          count: sim.aliveCount,
+          ballRadius: sim.ballRadius,
+        }));
+        course = courseFor(sim, map);
+        spawn = course.spawn;
+      }
       course.close();
       safe.length = 0;
       best.clear();
@@ -277,16 +308,18 @@ export function createLastPlaceRules(sim: Simulation): ModeRules {
       const banner = rounds.racing && t < GO_SECONDS ? "GO!" : undefined;
       const last = rounds.racing && !decided ? bubble()[0] : undefined;
       const out = cut > 1 ? `LAST ${cut} ARE ELIMINATED` : "LAST PLACE IS ELIMINATED";
+      const status = rounds.racing ? `${title} · ${safe.length}/${fieldAtStart - cut} SAFE` : title;
       return {
         headline: out,
         counterLabel: "COUNTRIES LEFT",
         counterValue: alive,
         showLeader: false,
-        status: rounds.racing ? `${title} · ${safe.length}/${fieldAtStart - cut} SAFE` : title,
+        status: sim.config.continuous ? `${status} · ${map.label}` : status,
         banner,
         title: intro
           ? {
               ...(rounds.round === 1 ? { text: `${total} COUNTRIES`, sub: out } : { text: title, sub: cut > 1 ? out : `${alive} COUNTRIES LEFT` }),
+              ...(sim.config.continuous ? { sub: `${map.label.toUpperCase()} · ${out}` } : {}),
               // In an arena the middle of the rings is where there's room.
               ...(map.arena ? { worldY: RING_CENTER.y - 40 } : {}),
             }

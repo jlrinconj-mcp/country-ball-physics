@@ -48,6 +48,13 @@ describe("video text in Spanish", () => {
     expect(translate("ROUND 4", "en")).toBe("ROUND 4");
   });
 
+  it("translates continuous-race map names and round cards", () => {
+    const config: SimulationConfig = { ...DEFAULT_CONFIG, ...modeDefaults("last-place-elimination"), continuous: true, seed: "es-continuous", countries: countries.map(c => c.cca3), maxParticipants: 16 };
+    expect([...phrases(config)].filter(p => !isTranslated(p, "es"))).toEqual([]);
+    expect(translate("FINAL 4 · Spinning Ring", "es")).toBe("FINAL 4 · Anillo");
+    expect(translate("DOUBLE RING · LAST PLACE IS ELIMINATED", "es")).toBe("ANILLO DOBLE · EL ÚLTIMO QUEDA ELIMINADO");
+  }, 60_000);
+
   it("names countries and results in the video's language", () => {
     expect(countryName({ name: "Germany", cca2: "DE" }, "es")).toBe("Alemania");
     expect(countryName({ name: "Germany", cca2: "DE" }, "en")).toBe("Germany");

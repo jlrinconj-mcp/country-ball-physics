@@ -1,0 +1,17 @@
+import { createSimulation, modeDefaults } from '/home/jorge/bolworld/src/modes/index.ts';
+import { DEFAULT_CONFIG } from '/home/jorge/bolworld/src/engine/defaults.ts';
+import { makeTestCountries } from '/home/jorge/bolworld/src/engine/testing.ts';
+import { DEFAULT_DISPLAY } from '/home/jorge/bolworld/src/render/displayOptions.ts';
+import { HeadlessRenderer } from '/home/jorge/bolworld/scripts/lib/headlessRenderer.ts';
+const countries=makeTestCountries(8);
+const defaults=modeDefaults('race');
+for(const seed of ['geometry-a','geometry-b','geometry-c']) {
+  const sim=createSimulation({...DEFAULT_CONFIG,...defaults,seed,countries:countries.map(c=>c.cca3),maxParticipants:8,physics:{...defaults.physics,ballScale:1.6},track:{sequence:['tunnel']}},countries);
+  const negatives=sim.obstacles.flatMap(o=>o.spec.shapes.filter(s=>s.kind==='circle' && s.r<0).map(s=>({id:o.id,shape:s})));
+  console.log('NEGATIVE_RADII',JSON.stringify({seed,ballRadius:sim.ballRadius,negatives}));
+  const renderer=new HeadlessRenderer({...DEFAULT_DISPLAY,camera:'fixed',hud:false},0.2);
+  renderer.attach(sim);
+  try { console.log('PNG',renderer.png().length); }
+  catch(error) { console.log('RENDER_ERROR',String(error)); }
+  sim.destroy();
+}

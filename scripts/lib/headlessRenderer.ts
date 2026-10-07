@@ -57,8 +57,13 @@ export class HeadlessRenderer {
       this.beforeStep?.();
       sim.step();
       this.afterStep?.();
-      this.camera.update(sim, 1, 1 / TICK_RATE);
+      this.advanceCamera();
     }
+  }
+
+  /** A continuous export may step its world externally across video parts. */
+  advanceCamera(): void {
+    if (this.sim) this.camera.update(this.sim, 1, 1 / TICK_RATE);
   }
 
   /** Stereo pan (-1…1) for a world x, from where it is on screen. */

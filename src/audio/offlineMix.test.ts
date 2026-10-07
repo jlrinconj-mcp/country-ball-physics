@@ -40,4 +40,18 @@ describe("OfflineMix", () => {
   it("is the same soundtrack every time", () => {
     expect(soundtrack(3)).toEqual(soundtrack(3));
   });
+
+  it("keeps overlapping audio across parts and discards completed samples", () => {
+    const mix = new OfflineMix();
+    mix.time = 0.9;
+    mix.play("victory");
+    const full = mix.wav(3).slice(44);
+    const first = mix.wav(1).slice(44);
+    mix.discardBefore(1);
+    const second = mix.wav(2, 1).slice(44);
+    expect(new Uint8Array([...first, ...second])).toEqual(full);
+    mix.time = 3;
+    mix.play("countdown");
+    expect(mix.wav(1, 3).slice(44).some(value => value !== 0)).toBe(true);
+  });
 });

@@ -187,18 +187,21 @@ export class BridgeSource implements ChatSource {
     this.closed = false;
     onStatus({ state: "connecting" });
     let after = -1;
+    let initialized = false;
     const poll = async () => {
       if (this.closed) return;
       try {
         const page = (await fetchJson(`/api/live/messages?after=${after}`)) as { last: number; messages: { id: number; message: ChatMessage }[] };
-        // The first poll only finds where "now" is.
-        if (after >= 0) for (const m of page.messages) onMessage(m.message);
+        // The first poll finds the current cursor; subsequent polls include
+        // messages posted after the source connected, even when that cursor is -1.
+        if (initialized) for (const m of page.messages) onMessage(m.message);
         after = page.last;
+        initialized = true;
         onStatus({ state: "connected", detail: this.label });
       } catch (error) {
         onStatus({ state: "error", detail: error instanceof Error ? error.message : String(error) });
       }
-      this.timer = setTimeout(poll, 700);
+      if (!this.closed) this.timer = setTimeout(poll, 700);
     };
     void poll();
   }

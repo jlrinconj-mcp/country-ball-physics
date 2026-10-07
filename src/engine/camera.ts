@@ -131,15 +131,23 @@ export class Camera {
     // Leader ↔ last: nothing to keep before it goes live, and the whip-pan
     // to a new subject is already on its way.
     if (mode === "leader-last" && (!this.spotlight || this.whip > 0)) return;
-    // Modes that pick their own subjects keep the first one in shot.
+    const chosen = sim.rules.cameraSubjects?.();
+    if (chosen?.length === 0 && sim.status === "running") return;
+    // Ordinary races stop enforcing a tracked leader once it leaves the
+    // course. Modes with their own action subjects still have a running order.
+    if (mode === "follow-leader" && !chosen && !sim.leader?.active) return;
+    // Follow leader always tracks the race leader; action/group subjects may
+    // instead highlight a different part of the field (e.g. last place).
     const leader =
       mode === "leader-last"
         ? (this.spotlight?.ball ?? null)
-        : sim.rules.cameraSubjects
-          ? (sim.rules.cameraSubjects()[0] ?? null)
-          : sim.leader?.active
-            ? sim.leader
-            : null;
+        : mode === "follow-leader"
+          ? this.followLeader(sim)
+          : chosen
+            ? (chosen[0] ?? null)
+            : sim.leader?.active
+              ? sim.leader
+              : null;
     if (!leader?.active) return;
     const x = lerp(leader.prevX, leader.x, alpha);
     const y = lerp(leader.prevY, leader.y, alpha);
@@ -164,6 +172,11 @@ export class Camera {
     }
     // Never past the world's edges (a subject inside the world stays in shot).
     if (px !== this.pose.x || py !== this.pose.y) this.pose = this.clamp({ ...this.pose, x: px, y: py }, sim.layout.bounds);
+  }
+
+  /** First country still on the course; safe/finished countries are off screen. */
+  private followLeader(sim: Simulation): CountryBall | null {
+    return sim.leader?.active ? sim.leader : (sim.rules.rank().find((ball) => ball.active) ?? null);
   }
 
   /**
@@ -228,7 +241,7 @@ export class Camera {
       const spot = this.spotlight;
       if (spot) {
         // A close-up on one ball, a little look-ahead down the course.
-        const zoom = fitWidth * CLOSE_UP;
+        const zoom = this.options.dynamicZoom ? fitWidth * CLOSE_UP : fitWidth;
         const x = lerp(spot.ball.prevX, spot.ball.x, alpha);
         const y = lerp(spot.ball.prevY, spot.ball.y, alpha) + (sim.rules.progress ? (0.1 * content.h) / zoom : 0);
         return this.clamp({ x, y, zoom }, bounds);
@@ -237,10 +250,11 @@ export class Camera {
       const group = boundsOf(balls.length ? balls : sim.balls, alpha);
       const pad = sim.ballRadius * 6;
       const fit = Math.min(width / (group.w + pad), content.h / (group.h + pad));
-      const zoom = Math.min(fitWidth * MAX_ZOOM_FACTOR, Math.max(fitWidth, fit));
+      const zoom = this.options.dynamicZoom ? Math.min(fitWidth * MAX_ZOOM_FACTOR, Math.max(fitWidth, fit)) : fitWidth;
       return this.clamp({ x: group.x + group.w / 2, y: group.y + group.h / 2, zoom }, bounds);
     }
-    if (mode === "fixed" || sim.rules.cameraFixed?.()) {
+    if (sim.rules.cameraFixed?.()) return centreOfFocus;
+    if (mode === "fixed") {
       // Whole map. When it fits the frame at full width, show all of it;
       // a tall track would shrink to a sliver with empty space either side,
       // so instead fill the width and scroll with the main group.
@@ -259,11 +273,11 @@ export class Camera {
     }
 
     let subject: CountryBall[];
-    if (chosen?.length) {
-      subject = mode === "follow-leader" ? chosen.slice(0, 1) : chosen;
-    } else if (mode === "follow-leader") {
-      const leader = sim.leader && sim.leader.active ? sim.leader : (sim.rules.rank().find((b) => b.active) ?? balls[0]);
+    if (mode === "follow-leader") {
+      const leader = this.followLeader(sim) ?? balls[0];
       subject = leader ? [leader] : balls;
+    } else if (chosen?.length) {
+      subject = chosen;
     } else if (mode === "follow-action") {
       const ranked = sim.rules.rank().filter((b) => b.active);
       subject = ranked.slice(0, Math.max(3, Math.ceil(ranked.length * (sim.rules.progress ? 0.1 : 0.2))));
@@ -274,7 +288,9 @@ export class Camera {
     const box = boundsOf(subject, alpha);
     const cx = focus.x + focus.w / 2;
     let zoom = fitWidth;
-    if (this.options.dynamicZoom && mode !== "follow-leader") {
+    if (mode === "leader-last" && !this.options.dynamicZoom) {
+      zoom = fitWidth;
+    } else if (this.options.dynamicZoom && mode !== "follow-leader") {
       const pad = sim.ballRadius * 6;
       const fit = Math.min(width / (box.w + pad), content.h / (box.h + pad));
       zoom = Math.min(fitWidth * MAX_ZOOM_FACTOR, Math.max(fitWidth, fit));

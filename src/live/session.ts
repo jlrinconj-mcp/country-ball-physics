@@ -237,6 +237,7 @@ export class LiveSession {
       maxParticipants: countries.length,
       ...(choice.mode === "last-place-elimination" ? { scenario: choice.map, map: undefined } : { map: choice.map }),
       tournament: undefined,
+      continuous: undefined,
       track: undefined,
       inputs: undefined,
     };

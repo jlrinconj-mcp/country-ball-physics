@@ -4,7 +4,7 @@ import type { SimulationResult } from "@/engine/simulation";
 import type { ModeId, SimulationConfig } from "@/engine/types";
 import { createSimulation } from "./index";
 
-export const TOURNAMENT_SIZES = [8, 16, 32, 64] as const;
+export const TOURNAMENT_SIZES = [8, 16, 20, 32, 64] as const;
 export type TournamentSize = (typeof TOURNAMENT_SIZES)[number];
 
 export interface TournamentSettings {
@@ -35,7 +35,7 @@ export interface HeatOutcome {
 export interface TournamentSummary {
   size: TournamentSize;
   mode: ModeId;
-  rounds: { name: string; advance: number; heats: { countries: string[]; winner: string | null; advanced: string[] }[] }[];
+  rounds: { name: string; advance: number; heats: { seed: string; countries: string[]; winner: string | null; advanced: string[]; result: SimulationResult | null }[] }[];
   current: { round: number; heat: number } | null;
   champion: string | null;
 }
@@ -49,30 +49,13 @@ export interface TournamentResult {
   fingerprint: string;
 }
 
-/** Round structure: heats of up to 8, always ending in a single final. */
+/** Groups of up to 8; only each group's winner reaches the single final. */
 function structure(size: TournamentSize): { name: string; heats: number; advance: number }[] {
-  switch (size) {
-    case 8:
-      return [
-        { name: "Semi-finals", heats: 2, advance: 2 },
-        { name: "Final", heats: 1, advance: 0 },
-      ];
-    case 16:
-      return [
-        { name: "Semi-finals", heats: 2, advance: 4 },
-        { name: "Final", heats: 1, advance: 0 },
-      ];
-    case 32:
-      return [
-        { name: "Quarter-finals", heats: 4, advance: 2 },
-        { name: "Final", heats: 1, advance: 0 },
-      ];
-    case 64:
-      return [
-        { name: "Round of 64", heats: 8, advance: 1 },
-        { name: "Final", heats: 1, advance: 0 },
-      ];
-  }
+  const heats = size === 20 ? 4 : Math.max(2, Math.ceil(size / 8));
+  return [
+    { name: "Groups", heats, advance: 1 },
+    { name: "Final", heats: 1, advance: 0 },
+  ];
 }
 
 /**
@@ -92,6 +75,9 @@ export class Tournament {
     this.shape = structure(settings.size);
     const random = createRandom(base.seed).fork("tournament");
     const pool = [...new Set(base.countries.map((c) => c.toUpperCase()))].sort();
+    if (settings.size === 20 && (base.mode !== "last-place-elimination" || pool.length !== 20)) {
+      throw new Error("El mini torneo requiere exactamente 20 países y Last Place Elimination.");
+    }
     if (pool.length < settings.size) {
       throw new Error(`A ${settings.size}-country tournament needs at least ${settings.size} countries (got ${pool.length})`);
     }
@@ -123,6 +109,8 @@ export class Tournament {
         seed: heat.seed,
         countries: heat.countries,
         maxParticipants: heat.countries.length,
+        tournament: undefined,
+        continuous: undefined,
       },
     };
   }
@@ -158,9 +146,11 @@ export class Tournament {
           heats: (planned?.heats ?? []).map((heat) => {
             const outcome = this.outcomes.find((o) => o.heat.round === index && o.heat.heat === heat.heat);
             return {
+              seed: heat.seed,
               countries: heat.countries,
               winner: outcome?.result.winner.cca3 ?? null,
               advanced: outcome?.advanced ?? [],
+              result: outcome?.result ?? null,
             };
           }),
         };
@@ -170,7 +160,7 @@ export class Tournament {
     };
   }
 
-  /** Human label for the HUD, e.g. "QUARTER-FINALS · HEAT 2/4". */
+  /** Human label for the HUD, e.g. "GROUPS · HEAT 2/4". */
   label(): string {
     const current = this.current();
     if (!current) return "FINAL";

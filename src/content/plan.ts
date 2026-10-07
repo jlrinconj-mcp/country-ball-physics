@@ -70,7 +70,7 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
     request.mode === "random"
       ? random.fork("mode").pick(listModes().map((m) => m.id))
       : request.mode === "tournament"
-        ? (request.heatMode ?? random.fork("heat-mode").pick(["race", "marble-race", "last-country-standing"] as const))
+        ? (request.heatMode ?? (request.tournamentSize === 20 ? "last-place-elimination" : random.fork("heat-mode").pick(["race", "marble-race", "last-country-standing"] as const)))
         : request.mode;
   const definition = getMode(mode);
 
@@ -92,6 +92,12 @@ export function planSimulation(request: GenerateRequest, countries: Country[]): 
   const tournament = request.mode === "tournament" ? { size: request.tournamentSize ?? pickSize(codes.length) } : undefined;
   if (tournament && codes.length < tournament.size) {
     throw new Error(`A ${tournament.size}-country tournament needs ${tournament.size} countries; "${label}" has ${codes.length}`);
+  }
+  if (tournament?.size === 20) {
+    const selected = countries.filter(c => codes.includes(c.cca3));
+    if (mode !== "last-place-elimination" || codes.length !== 20 || selected.some(c => c.region !== "Americas" || !c.sovereign)) {
+      throw new Error("El mini torneo requiere exactamente 20 países de América y Last Place Elimination.");
+    }
   }
   if (codes.length < 2) throw new Error(`"${label}" selects fewer than 2 countries`);
 

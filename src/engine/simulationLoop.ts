@@ -59,6 +59,7 @@ export class SimulationLoop {
   }
 
   stop(): void {
+    if (!this.running) return;
     this.running = false;
     this.clock.cancel(this.handle);
   }

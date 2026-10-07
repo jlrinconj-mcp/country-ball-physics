@@ -1,0 +1,10 @@
+{
+  "name": "Mini torneo de América: el último queda eliminado",
+  "seed": "america-20",
+  "countries": ["CAN", "USA", "MEX", "GTM", "HND", "SLV", "CRI", "PAN", "CUB", "DOM", "JAM", "HTI", "COL", "VEN", "ECU", "PER", "BOL", "BRA", "CHL", "ARG"],
+  "size": 20,
+  "heatMode": "last-place-elimination",
+  "heatScenario": "plinko",
+  "format": "9:16",
+  "language": "es"
+}

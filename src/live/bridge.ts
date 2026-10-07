@@ -18,9 +18,9 @@ export class MessageBuffer {
     return messages.length;
   }
 
-  /** Messages after `id` (-1 for none: just learn where "now" is). */
+  /** Messages after `id`; -1 returns the retained history so a first event at id 0 is visible. */
   since(id: number): { last: number; messages: { id: number; message: ChatMessage }[] } {
-    return { last: this.next - 1, messages: id < 0 ? [] : this.messages.filter((m) => m.id > id) };
+    return { last: this.next - 1, messages: this.messages.filter((m) => m.id > id) };
   }
 }
 

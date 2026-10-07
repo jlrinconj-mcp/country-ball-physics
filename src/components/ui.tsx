@@ -123,11 +123,12 @@ export function Segmented<T extends string>({
   label?: string;
 }) {
   const control = (
-    <div className="flex rounded-lg bg-zinc-900 p-0.5 ring-1 ring-white/[0.06]">
+    <div role={label ? "group" : undefined} aria-label={label} className="flex rounded-lg bg-zinc-900 p-0.5 ring-1 ring-white/[0.06]">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
+          aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={cn(
             "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
@@ -139,7 +140,12 @@ export function Segmented<T extends string>({
       ))}
     </div>
   );
-  return label ? <Field label={label}>{control}</Field> : control;
+  return label ? (
+    <div>
+      <p className="mb-1.5 text-[13px] text-zinc-300">{label}</p>
+      {control}
+    </div>
+  ) : control;
 }
 
 export function Button({

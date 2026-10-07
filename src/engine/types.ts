@@ -160,7 +160,7 @@ export interface SimulationConfig {
    * Run as a tournament: heats of `mode` with a seeded draw, winners advancing
    * to a final. Orchestrated by `Tournament`; a single Simulation ignores it.
    */
-  tournament?: { size: 8 | 16 | 32 | 64 };
+  tournament?: { size: 8 | 16 | 20 | 32 | 64 };
   /**
    * Custom track (race modes): module sequence between start and finish, in
    * order. Geometry inside each module is still generated from the seed.
@@ -178,6 +178,11 @@ export interface SimulationConfig {
    * long formats such as live streams.
    */
   elimination?: "batch" | "single";
+  /**
+   * Last Place Elimination: keep the surviving field in one competition,
+   * changing to a different seeded map each round until one country remains.
+   */
+  continuous?: boolean;
   /**
    * Inputs from outside the simulation (live viewers' boosts), each applied
    * at its tick. A live game records them, so replaying its config with them

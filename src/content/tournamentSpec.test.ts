@@ -34,6 +34,16 @@ describe("parseTournamentSpec", () => {
     }
     expect(() => parseTournamentSpec([])).toThrow("JSON object");
   });
+
+  it("defaults the 20-country format to Last Place Elimination", () => {
+    const spec = parseTournamentSpec({ countries: countries.slice(0, 20).map(c => c.cca3), size: 20 });
+    const americans = countries.map(c => ({ ...c, region: "Americas" as const }));
+    const run = runTournamentSpec(spec, americans, "twenty-spec");
+    expect(run.plan.config.mode).toBe("last-place-elimination");
+    expect(run.tournament?.outcomes).toHaveLength(5);
+    expect(run.plan.config.tournament?.size).toBe(20);
+    expect(() => runTournamentSpec(spec, countries, "twenty-spec")).toThrow(/América/);
+  });
 });
 
 describe("runTournamentSpec", () => {

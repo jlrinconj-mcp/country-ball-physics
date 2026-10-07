@@ -7,6 +7,13 @@ import { applyPreset, eligibleCountries, getPreset } from "./selection";
 const countries = normalizeOpenData(sample);
 
 describe("country selection", () => {
+  it("selects America across both continents using the region", () => {
+    const codes = applyPreset(getPreset("americas")!, eligibleCountries(countries, { includeTerritories: false, excluded: new Set() }));
+    expect(codes).toContain("COL");
+    expect(codes).toContain("USA");
+    expect(codes).not.toContain("FRA");
+    expect(countries.filter(c => codes.includes(c.cca3)).every(c => c.region === "Americas")).toBe(true);
+  });
   it("selects by continent", () => {
     expect(applyPreset(getPreset("south-america")!, countries)).toEqual(["ARG", "BRA", "COL"]);
   });

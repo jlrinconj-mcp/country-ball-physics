@@ -3,6 +3,8 @@ import type { Continent, Country } from "./countryTypes";
 
 export type PresetId =
   | "all"
+  | "americas"
+  | "americas-20"
   | "europe"
   | "asia"
   | "africa"
@@ -17,11 +19,21 @@ export interface Preset {
   id: PresetId;
   label: string;
   continent?: Continent;
+  region?: Country["region"];
+  codes?: readonly string[];
   random?: number;
 }
 
+/** 3 northern, 5 Central American, 4 Caribbean and 8 South American countries. */
+export const AMERICAS_20 = [
+  "CAN", "USA", "MEX", "GTM", "HND", "SLV", "CRI", "PAN",
+  "CUB", "DOM", "JAM", "HTI", "COL", "VEN", "ECU", "PER", "BOL", "BRA", "CHL", "ARG",
+] as const;
+
 export const PRESETS: Preset[] = [
   { id: "all", label: "All Countries" },
+  { id: "americas", label: "América", region: "Americas" },
+  { id: "americas-20", label: "América · 20", codes: AMERICAS_20 },
   { id: "europe", label: "Europe", continent: "Europe" },
   { id: "asia", label: "Asia", continent: "Asia" },
   { id: "africa", label: "Africa", continent: "Africa" },
@@ -40,7 +52,11 @@ export function getPreset(id: string): Preset | undefined {
 /** Countries a preset selects (sorted alpha-3 codes). Random presets need a Random. */
 export function applyPreset(preset: Preset, pool: Country[], random?: Random): string[] {
   let chosen = pool;
-  if (preset.continent) {
+  if (preset.codes) {
+    chosen = pool.filter(c => preset.codes?.includes(c.cca3));
+  } else if (preset.region) {
+    chosen = pool.filter(c => c.region === preset.region);
+  } else if (preset.continent) {
     chosen = pool.filter((c) => c.continents.includes(preset.continent as Continent));
   } else if (preset.random) {
     if (!random) throw new Error(`Preset ${preset.id} needs a Random`);

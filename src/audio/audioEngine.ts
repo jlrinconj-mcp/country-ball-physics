@@ -17,10 +17,12 @@ export class AudioEngine {
   private readonly variants = createRandom("audio-variants");
   private streamDestination: MediaStreamAudioDestinationNode | null = null;
   private volume = 0.6;
+  private activation = 0;
   enabled = false;
 
   /** Must be called after a user gesture (browser autoplay rules). */
   async enable(): Promise<void> {
+    const activation = ++this.activation;
     if (typeof window === "undefined" || typeof AudioContext === "undefined") return;
     if (!this.ctx) {
       this.ctx = new AudioContext();
@@ -40,6 +42,7 @@ export class AudioEngine {
       }
     }
     if (this.ctx.state === "suspended") await this.ctx.resume();
+    if (activation !== this.activation) return;
     this.enabled = true;
   }
 
@@ -52,6 +55,7 @@ export class AudioEngine {
   }
 
   disable(): void {
+    ++this.activation;
     this.enabled = false;
     void this.ctx?.suspend();
   }
@@ -91,6 +95,7 @@ export class AudioEngine {
   }
 
   dispose(): void {
+    ++this.activation;
     void this.ctx?.close();
     this.ctx = null;
     this.master = null;

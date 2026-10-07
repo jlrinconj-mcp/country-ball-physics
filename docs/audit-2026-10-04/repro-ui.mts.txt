@@ -1,0 +1,110 @@
+import assert from 'node:assert/strict';
+import { SimulationController } from '/home/jorge/bolworld/src/runtime/SimulationController.ts';
+import { FlagAtlas } from '/home/jorge/bolworld/src/render/flagAtlas.ts';
+import { DEFAULT_CONFIG } from '/home/jorge/bolworld/src/engine/defaults.ts';
+import { DEFAULT_DISPLAY } from '/home/jorge/bolworld/src/render/displayOptions.ts';
+import { DEFAULT_LIVE_OPTIONS } from '/home/jorge/bolworld/src/live/session.ts';
+import { makeTestCountries } from '/home/jorge/bolworld/src/engine/testing.ts';
+import { MessageBuffer } from '/home/jorge/bolworld/src/live/bridge.ts';
+
+const globals = globalThis as any;
+globals.window = { localStorage: { getItem: () => null, setItem: () => {} } };
+FlagAtlas.prototype.preload = async (countries: unknown[]) => ({ loaded: countries.length, failed: 0 });
+const countries = makeTestCountries(3);
+const opts = { ...DEFAULT_LIVE_OPTIONS, seed: 'audit', fill: countries.map(c => c.cca3) };
+const flush = async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); };
+
+// A disconnected Bridge poll still delivers its in-flight response to the live session.
+const timers: (() => void)[] = [];
+const originalSetTimeout = globals.setTimeout;
+const originalClearTimeout = globals.clearTimeout;
+globals.setTimeout = (fn: () => void) => { timers.push(fn); return timers.length; };
+globals.clearTimeout = () => {};
+let fetchCount = 0;
+let resolvePoll!: (value: unknown) => void;
+globals.fetch = async () => {
+  fetchCount++;
+  const body = fetchCount === 1 ? { last: 0, messages: [] } : await new Promise(resolve => { resolvePoll = resolve; });
+  return { ok: true, json: async () => body };
+};
+const bridgeController = new SimulationController();
+bridgeController.startLive(opts, DEFAULT_CONFIG, countries);
+bridgeController.connectChat({ kind: 'bridge' });
+await flush();
+assert.equal(timers.length, 1);
+timers.shift()!();
+await flush();
+bridgeController.disconnectChat();
+resolvePoll({ last: 1, messages: [{ id: 1, message: { platform: 'bridge', user: 'stale-viewer', text: `!join ${countries[0]!.cca3}` } }] });
+await flush();
+(bridgeController as any).publish(true);
+const stale = bridgeController.getSnapshot().live!;
+assert.equal(stale.chat.state, 'closed');
+assert.equal(stale.view.teams[0]!.users[0], 'stale-viewer');
+console.log('CONFIRMED stale Bridge delivery after disconnect:', { chat: stale.chat.state, teams: stale.view.teams });
+bridgeController.stopLive();
+bridgeController.dispose();
+
+// On a freshly empty bridge buffer, the first new command is discarded as history.
+timers.length = 0;
+const buffer = new MessageBuffer();
+globals.fetch = async (url: string) => {
+  const after = Number(new URL(url, 'http://audit.local').searchParams.get('after'));
+  return { ok: true, json: async () => buffer.since(after) };
+};
+const emptyController = new SimulationController();
+emptyController.startLive(opts, DEFAULT_CONFIG, countries);
+emptyController.connectChat({ kind: 'bridge' });
+await flush();
+buffer.push([{ platform: 'bridge', user: 'first-viewer', text: `!join ${countries[0]!.cca3}` }]);
+timers.shift()!();
+await flush();
+(emptyController as any).publish(true);
+assert.equal(emptyController.getSnapshot().live!.view.teams.length, 0);
+buffer.push([{ platform: 'bridge', user: 'second-viewer', text: `!join ${countries[1]!.cca3}` }]);
+timers.shift()!();
+await flush();
+(emptyController as any).publish(true);
+assert.equal(emptyController.getSnapshot().live!.view.teams[0]!.users[0], 'second-viewer');
+console.log('CONFIRMED first bridge command is dropped:', { teams: emptyController.getSnapshot().live!.view.teams });
+emptyController.stopLive();
+emptyController.dispose();
+globals.setTimeout = originalSetTimeout;
+globals.clearTimeout = originalClearTimeout;
+
+// Disposing the owner does not disconnect a live Twitch socket.
+let closed = false;
+globals.WebSocket = class {
+  onopen: unknown; onmessage: unknown; onerror: unknown; onclose: unknown;
+  constructor(readonly url: string) {}
+  close() { closed = true; }
+};
+const twitchController = new SimulationController();
+twitchController.startLive(opts, DEFAULT_CONFIG, countries);
+twitchController.connectChat({ kind: 'twitch', channel: 'audit-channel' });
+twitchController.dispose();
+assert.equal(closed, false);
+console.log('CONFIRMED dispose leaves Twitch open:', { closed, liveRunning: twitchController.liveRunning });
+twitchController.stopLive();
+
+// Pending AudioContext.resume lets a later off setting be overwritten.
+let resolveResume!: () => void;
+let suspendCalls = 0;
+globals.AudioContext = class {
+  state = 'suspended'; sampleRate = 8000; destination = {};
+  createGain() { return { gain: { value: 1 }, connect() {} }; }
+  createBuffer(_channels: number, length: number) { const data = new Float32Array(length); return { getChannelData: () => data }; }
+  resume() { return new Promise<void>(resolve => { resolveResume = resolve; }); }
+  async suspend() { suspendCalls++; }
+  async close() {}
+};
+const audioController = new SimulationController();
+audioController.setDisplay({ ...DEFAULT_DISPLAY, audio: true });
+audioController.setDisplay({ ...DEFAULT_DISPLAY, audio: false });
+resolveResume();
+await flush();
+assert.equal((audioController as any).display.audio, false);
+assert.equal((audioController as any).audio.enabled, true);
+assert.equal(suspendCalls, 0);
+console.log('CONFIRMED audio resumes after off:', { displayAudio: (audioController as any).display.audio, engineEnabled: (audioController as any).audio.enabled, suspendCalls });
+audioController.dispose();

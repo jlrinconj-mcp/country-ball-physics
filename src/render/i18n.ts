@@ -1,4 +1,5 @@
 import type { Country } from "@/countries/countryTypes";
+import { listMaps } from "@/tracks/maps";
 
 /**
  * Language of everything drawn on the video. Modes and the HUD build their
@@ -33,6 +34,7 @@ const ES_PHRASES: Record<string, string> = {
   WINNER: "GANADOR",
   CHAMPION: "CAMPEÓN",
   "HEAT WINNER": "GANADOR DE LA SERIE",
+  GROUPS: "GRUPOS",
   "DECIDED AT THE TIME LIMIT": "DECIDIDO AL LÍMITE DE TIEMPO",
   "SEMI-FINALS": "SEMIFINALES",
   "QUARTER-FINALS": "CUARTOS DE FINAL",
@@ -129,6 +131,13 @@ const ES_MAPS: Record<string, string> = {
   drop: "Caída",
   "grand-gauntlet": "Gran desafío",
 };
+
+// Continuous races name each current course in their status and title cards.
+for (const map of listMaps()) {
+  const label = ES_MAPS[map.id] ?? map.label;
+  ES_PHRASES[map.label] = label;
+  ES_PHRASES[map.label.toUpperCase()] = label.toUpperCase();
+}
 
 /** "El último sale · Martillos" */
 export function gameLabel(mode: string, map: string, mapLabel: string, language: Language = "en"): string {

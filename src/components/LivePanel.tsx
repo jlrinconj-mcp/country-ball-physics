@@ -132,27 +132,27 @@ function phaseLabel(snapshot: ControllerSnapshot): string {
   return { idle: "Idle", loading: "Loading", running: "Running", finished: "Finished", error: "Error" }[snapshot.phase];
 }
 
-function Bracket({ summary, countries }: { summary: TournamentSummary; countries: Map<string, Country> }) {
+export function Bracket({ summary, countries }: { summary: TournamentSummary; countries: Map<string, Country> }) {
   const flag = (code: string) => countries.get(code)?.flag.emoji ?? code;
   const champion = summary.champion ? countries.get(summary.champion) : null;
   return (
     <div className="border-b border-white/[0.06] px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
-        Tournament · {summary.size}
+        Torneo · {summary.size}
       </p>
       {champion && (
         <p className="mt-2 text-sm">
-          <span className="text-amber-300">Champion</span> {champion.flag.emoji} <span className="font-semibold">{champion.name}</span>
+          <span className="text-amber-300">Campeón</span> {champion.flag.emoji} <span className="font-semibold">{champion.name}</span>
         </p>
       )}
       <div className="mt-2 space-y-2.5">
         {summary.rounds.map((round, r) => (
           <div key={round.name}>
             <p className="text-xs text-zinc-500">
-              {round.name}
-              {round.advance > 0 && ` · top ${round.advance} advance`}
+              {round.name === "Groups" ? "Grupos" : round.name}
+              {round.advance > 0 && (round.advance === 1 ? " · solo el ganador clasifica" : ` · clasifican los primeros ${round.advance}`)}
             </p>
-            {round.heats.length === 0 && <p className="text-xs text-zinc-600">Waiting for qualifiers…</p>}
+            {round.heats.length === 0 && <p className="text-xs text-zinc-600">Esperando a los ganadores de grupo…</p>}
             <ul className="mt-1 space-y-1">
               {round.heats.map((heat, h) => {
                 const active = summary.current?.round === r && summary.current.heat === h;
@@ -161,11 +161,11 @@ function Bracket({ summary, countries }: { summary: TournamentSummary; countries
                   <li
                     key={h}
                     className={cn(
-                      "flex items-center gap-2 rounded-md px-2 py-1",
+                      "rounded-md px-2 py-1",
                       active ? "bg-amber-400/10 ring-1 ring-amber-400/30" : "bg-zinc-900/60",
                     )}
                   >
-                    <span className="w-5 font-mono text-[10px] text-zinc-500">{round.heats.length > 1 ? `H${h + 1}` : "F"}</span>
+                    <span className="mr-2 font-mono text-[10px] text-zinc-500">{round.heats.length > 1 ? `Grupo ${h + 1}` : "Final"}</span>
                     <span className="flex flex-wrap gap-0.5 text-sm leading-none">
                       {heat.countries.map((code) => (
                         <span
@@ -177,6 +177,12 @@ function Bracket({ summary, countries }: { summary: TournamentSummary; countries
                         </span>
                       ))}
                     </span>
+                    <p className="mt-1 break-all font-mono text-[10px] text-zinc-500">{heat.seed}</p>
+                    {heat.result && <details className="mt-1 text-[11px] text-zinc-300">
+                      <summary className="cursor-pointer">Resultado · {heat.result.seconds.toFixed(1)} s</summary>
+                      <ol>{heat.result.ranking.map(entry => <li key={entry.cca3}>{entry.place}. {flag(entry.cca3)} {countries.get(entry.cca3)?.name ?? entry.name}</li>)}</ol>
+                      <p className="mt-1 font-mono">{heat.result.fingerprint}</p>
+                    </details>}
                   </li>
                 );
               })}

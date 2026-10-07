@@ -104,12 +104,13 @@ export function tournamentRequest(spec: TournamentSpec, seed?: string): Generate
     seed: seed ?? spec.seed,
     countries: spec.countries,
     tournamentSize: spec.size,
-    heatMode: spec.heatMode ?? "race",
+    heatMode: spec.heatMode ?? (spec.size === 20 ? "last-place-elimination" : "race"),
     track: spec.heatScenario,
     customTrack: spec.track,
     physics: spec.physics,
     maxDuration: spec.maxDuration,
     format: spec.format,
+    language: spec.language,
     includeTerritories: spec.includeTerritories,
   };
 }

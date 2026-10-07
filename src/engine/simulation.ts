@@ -1,4 +1,4 @@
-import type Matter from "matter-js";
+import Matter from "matter-js";
 import type { Country } from "@/countries/countryTypes";
 import { CountryBall } from "@/entities/CountryBall";
 import { Obstacle } from "@/entities/Obstacle";
@@ -78,9 +78,9 @@ export interface ModeRules {
   /** Whether a leader makes sense yet (e.g. not before the start gate opens). */
   leaderActive?(): boolean;
   /**
-   * Balls the follow cameras frame instead of their default subject (leader,
-   * pack, group); the first one is always kept in shot. An empty list holds
-   * the current shot.
+   * Balls action/group cameras frame instead of their default pack. Follow
+   * leader uses the running order. An empty list holds the current shot for
+   * all follow cameras.
    */
   cameraSubjects?(): CountryBall[];
   /** Frame the whole arena whatever the camera mode (e.g. ring arenas). */
@@ -336,6 +336,44 @@ export class Simulation {
   }
 
   // ── Rules API (used by modes) ──────────────────────────────────────────
+
+  /** Change courses without restarting the competition, its clock or inputs. */
+  replaceLayout(next: WorldLayout): void {
+    for (const obstacle of this.obstacles) {
+      this.bodyOwners.delete(obstacle.body.id);
+      this.physics.remove(obstacle.body);
+    }
+    this.obstacles.length = 0;
+    this.pendingKicks.length = 0;
+    this.phasing.clear();
+    for (const ball of this.balls) {
+      ball.ghost = null;
+      if (ball.body) ball.body.collisionFilter.mask = CATEGORY.ball | CATEGORY.solid;
+    }
+    // Collision pairs belong to the previous course, even when a ball survives.
+    Matter.Engine.clear(this.physics.engine);
+    this.leader = null;
+    this.leaderCandidate = null;
+    this.leaderCandidateTicks = 0;
+
+    // Keep the layout object stable for renderers, but remove optional track
+    // fields when the next course is an arena (and vice versa).
+    delete this.layout.finishY;
+    delete this.layout.startY;
+    delete this.layout.gateOpensAt;
+    delete this.layout.modules;
+    delete this.layout.path;
+    Object.assign(this.layout, next);
+    this.zones.splice(0, this.zones.length, ...next.zones.map((z) => new Zone(z)));
+    for (const spec of next.obstacles) {
+      const obstacle = this.addObstacle(spec);
+      if (!obstacle.kinematic) continue;
+      const pose = obstacle.poseAt(this.time);
+      this.physics.placeStatic(obstacle.body, pose, pose.angle);
+      obstacle.syncFromBody();
+      obstacle.savePrevious();
+    }
+  }
 
   eliminate(ball: CountryBall, options: { fall?: boolean } = {}): void {
     if (!ball.alive) return;

@@ -1,0 +1,59 @@
+import Matter from '/home/jorge/bolworld/node_modules/matter-js/build/matter.js';
+import { createSimulation, modeDefaults } from '/home/jorge/bolworld/src/modes/index.ts';
+import { DEFAULT_CONFIG } from '/home/jorge/bolworld/src/engine/defaults.ts';
+import { makeTestCountries } from '/home/jorge/bolworld/src/engine/testing.ts';
+import { Camera } from '/home/jorge/bolworld/src/engine/camera.ts';
+import { DEFAULT_DISPLAY } from '/home/jorge/bolworld/src/render/displayOptions.ts';
+import { viewportFor } from '/home/jorge/bolworld/src/render/viewport.ts';
+import { planSimulation } from '/home/jorge/bolworld/src/content/plan.ts';
+import { parseTournamentSpec, tournamentRequest, runTournamentSpec } from '/home/jorge/bolworld/src/content/tournamentSpec.ts';
+import { withDeterministicMath } from '/home/jorge/bolworld/src/engine/deterministicMath.ts';
+
+const countries = makeTestCountries(8);
+const codes = countries.map(c => c.cca3);
+const base = { ...DEFAULT_CONFIG, ...modeDefaults('last-country-standing'), countries: codes, maxParticipants: 8, seed: 'audit' };
+const language = runTournamentSpec(parseTournamentSpec({ countries: codes, size: 8, language: 'es', maxDuration: 10 }), countries, 'audit-language');
+console.log('LANGUAGE', JSON.stringify({ display: language.plan.display.language, metadata: language.metadata.language }));
+
+for (const format of ['9:16', '1:1', '16:9'] as const) {
+  const sim = createSimulation(base, countries);
+  const camera = new Camera();
+  camera.options = { mode: 'fixed', dynamicZoom: true };
+  camera.setViewport(viewportFor({ ...DEFAULT_DISPLAY, format }));
+  camera.snap(sim);
+  const focus = sim.layout.focus;
+  const top = camera.worldToScreen(focus.x + focus.w / 2, focus.y).y;
+  const bottom = camera.worldToScreen(focus.x + focus.w / 2, focus.y + focus.h).y;
+  console.log('CAMERA', JSON.stringify({ format, pose: camera.pose, content: camera.getViewport().content, top, bottom, outputHeight: camera.getViewport().height }));
+  sim.destroy();
+}
+
+try { withDeterministicMath(() => Math.atan2(Infinity, 2)); }
+catch (error) { console.log('ATAN_INFINITY', String(error)); }
+
+const race = createSimulation({ ...base, ...modeDefaults('race'), seed: 'audit-ranking', maxParticipants: 4, countries: codes.slice(0, 4) }, countries);
+race.start();
+const [first, second, third, fourth] = race.balls;
+race.finish(first!);
+race.finish(second!);
+race.eliminate(third!);
+race.finish(fourth!);
+race.declareWinner(first!);
+console.log('RACE_RANKING', JSON.stringify(race.result?.ranking.map(x => ({place:x.place, code:x.cca3, status:x.status}))));
+race.destroy();
+
+const simA = createSimulation({ ...base, ...modeDefaults('last-place-elimination'), countries: codes, maxParticipants: 8 }, countries);
+const a = simA.balls[0]!;
+simA.park(a);
+const simB = createSimulation({ ...base, ...modeDefaults('race'), countries: codes.slice(0,2), maxParticipants: 2, track: { sequence: [] } }, countries);
+const bodyIdsBefore = new Set(Matter.Composite.allBodies(simA.physics.engine.world).flatMap(b => b.parts.map(p => p.id)));
+simA.unpark(a, 100, 100);
+console.log('WORLD_ID', JSON.stringify({ newId: a.body?.id, duplicate: bodyIdsBefore.has(a.body!.id), count: Matter.Composite.allBodies(simA.physics.engine.world).length }));
+simB.destroy();
+simA.destroy();
+
+const replay = createSimulation({ ...base, inputs: [{ tick: 100, kind: 'boost', cca3: codes[0]! }] }, countries);
+replay.input('boost', codes[1]!);
+replay.step();
+console.log('LIVE_INPUT', JSON.stringify({ inputTicks: replay.inputs.map(i => i.tick), timelineBoosts: replay.timeline.filter(e => e.type === 'boost') }));
+replay.destroy();

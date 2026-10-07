@@ -73,6 +73,16 @@ function session(overrides: Partial<typeof DEFAULT_LIVE_OPTIONS> = {}) {
 }
 
 describe("LiveSession", () => {
+  it("uses the voted map without inheriting the manual continuous race", () => {
+    const live = session();
+    const voted = live.view().choices[0]!;
+    const config = live.startConfig({ ...DEFAULT_CONFIG, continuous: true, tournament: { size: 16 } });
+    expect(config.continuous).toBeUndefined();
+    expect(config.tournament).toBeUndefined();
+    expect(config.mode).toBe(voted.mode);
+    expect(config.mode === "last-place-elimination" ? config.scenario : config.map).toBe(voted.map);
+  });
+
   it("lobby: viewers join teams and vote; the game uses their countries and the winning vote", () => {
     const live = session();
     live.handle(chat("ana", "!join colombia"));

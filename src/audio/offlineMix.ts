@@ -16,6 +16,7 @@ export class OfflineMix {
   private left = new Float32Array(MIX_RATE * 10);
   private right = new Float32Array(MIX_RATE * 10);
   private length = 0;
+  private baseFrame = 0;
   /** Seconds into the video "now" (set by whoever drives the simulation). */
   time = 0;
 
@@ -33,7 +34,7 @@ export class OfflineMix {
     const angle = ((voice.pan + 1) * Math.PI) / 4;
     const gl = Math.cos(angle) * voice.gain * this.volume;
     const gr = Math.sin(angle) * voice.gain * this.volume;
-    const start = Math.round(this.time * MIX_RATE);
+    const start = Math.round(this.time * MIX_RATE) - this.baseFrame;
     this.reserve(start + frames);
     for (let i = 0; i < frames; i++) {
       // Linear resampling for the pitched-up impacts.
@@ -51,7 +52,7 @@ export class OfflineMix {
   }
 
   /** 16-bit stereo WAV, `seconds` long (silence-padded or cut). */
-  wav(seconds: number): Uint8Array {
+  wav(seconds: number, startSeconds = 0): Uint8Array {
     const frames = Math.round(seconds * MIX_RATE);
     const bytes = new Uint8Array(44 + frames * 4);
     const view = new DataView(bytes.buffer);
@@ -69,14 +70,29 @@ export class OfflineMix {
     view.setUint16(34, 16, true);
     text(36, "data");
     view.setUint32(40, frames * 4, true);
+    const offset = Math.round(startSeconds * MIX_RATE) - this.baseFrame;
     for (let i = 0; i < frames; i++) {
-      const l = i < this.length ? (this.left[i] as number) : 0;
-      const r = i < this.length ? (this.right[i] as number) : 0;
+      const at = offset + i;
+      const l = at < this.length ? (this.left[at] as number) : 0;
+      const r = at < this.length ? (this.right[at] as number) : 0;
       // Soft limiter: dense moments never clip.
       view.setInt16(44 + i * 4, Math.round(Math.tanh(l) * 32767), true);
       view.setInt16(46 + i * 4, Math.round(Math.tanh(r) * 32767), true);
     }
     return bytes;
+  }
+
+  /** Release completed parts while preserving sounds that overlap the cut. */
+  discardBefore(seconds: number): void {
+    const frame = Math.round(seconds * MIX_RATE);
+    const count = Math.max(0, frame - this.baseFrame);
+    if (!count) return;
+    this.left.copyWithin(0, count);
+    this.right.copyWithin(0, count);
+    this.length = Math.max(0, this.length - count);
+    this.left.fill(0, this.length);
+    this.right.fill(0, this.length);
+    this.baseFrame = frame;
   }
 
   private reserve(frames: number): void {

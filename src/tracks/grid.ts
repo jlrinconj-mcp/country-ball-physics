@@ -80,7 +80,7 @@ export function pegGrid(options: PegGridOptions): PegGrid {
   const rowHeight = pitch * (options.rowRatio ?? 0.87);
   // Wall ↔ edge peg gap of 2.4 ball radii, without opening a lane next to
   // the wall bumps (they cover up to pegRadius + 0.8 r from the wall).
-  const edgeRadius = Math.max(pitch / 2 - pegRadius - (1 - GRID_OVERLAP) * 2 * r + 1, Math.min(pegRadius, pitch / 2 - 2.4 * r));
+  const edgeRadius = Math.max(1, pitch / 2 - pegRadius - (1 - GRID_OVERLAP) * 2 * r + 1, Math.min(pegRadius, pitch / 2 - 2.4 * r));
   const pegs: GridPeg[] = [];
   for (let row = 0; row < options.rows; row++) {
     const y = options.top + row * rowHeight;

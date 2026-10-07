@@ -10,7 +10,7 @@ import { findMap, listMaps } from "@/tracks/maps";
 import type { DisplayOptions, LabelMode } from "@/render/displayOptions";
 import { FORMATS, type VideoFormat } from "@/render/formats";
 import { THEMES, type ThemeId } from "@/render/theme";
-import { PresetChips, type SelectionState } from "./CountrySelector";
+import { PresetChips, selectPreset, type SelectionState } from "./CountrySelector";
 import { TrackEditor } from "./TrackEditor";
 import { LANGUAGES } from "@/render/i18n";
 import { Button, Field, Section, Segmented, Select, Slider, Toggle } from "./ui";
@@ -59,63 +59,63 @@ export function ControlPanel({
   const show = (patch: Partial<DisplayOptions>) => onDisplay({ ...display, ...patch });
   const participants = Math.min(selection.selected.length, config.maxParticipants);
   const tournament = config.tournament;
+  const continuous = config.continuous === true;
+  const format = tournament ? "tournament" : continuous ? "continuous" : "single";
 
   return (
     <div>
-      <Section title="Mode">
+      <Section title="Competición">
         <Select
-          label="Mode"
-          value={tournament ? "tournament" : config.mode}
+          label="Formato de competición"
+          value={format}
           options={[
-            ...listModes().map((m) => ({ value: m.id as ModeId | "tournament", label: m.label })),
-            { value: "tournament", label: "Tournament" },
+            { value: "single", label: "Partida · un mapa" },
+            { value: "tournament", label: "Torneo · grupos y final" },
+            { value: "continuous", label: "Carrera continua · mapas variados" },
           ]}
           onChange={(id) => {
-            if (id === "tournament") {
-              onConfig({ ...config, tournament: { size: 16 }, seed: generateSeed("cup") });
-              return;
-            }
-            onConfig({ ...config, ...modeDefaults(id), tournament: undefined, track: undefined, map: undefined, seed: generateSeed(seedPrefix(id)) });
-            onDisplay({ ...display, camera: getMode(id).defaultCamera });
+            const defaults = config.mode === "last-place-elimination" ? {} : modeDefaults("last-place-elimination");
+            onConfig({ ...config, ...defaults, tournament: id === "tournament" ? { size: 16 } : undefined, continuous: id === "continuous" ? true : undefined, track: undefined, map: undefined, seed: generateSeed(id === "tournament" ? "cup" : id === "continuous" ? "tour" : "last") });
+            onDisplay({ ...display, camera: getMode("last-place-elimination").defaultCamera });
           }}
         />
         {tournament && (
           <>
             <p className="text-xs leading-relaxed text-zinc-500">
-              A seeded draw splits {tournament.size} countries into heats; the best of each heat advance to the final.
+              {tournament.size === 20 ? "Cuatro grupos de cinco países de América. Solo el ganador de cada grupo avanza a la final de cuatro." : `Sorteo de ${tournament.size} países en grupos. Solo el primero de cada grupo clasifica; los ganadores se enfrentan en la final.`}
             </p>
             <Segmented
-              label="Tournament size"
-              value={String(tournament.size) as "8" | "16" | "32" | "64"}
-              options={TOURNAMENT_SIZES.map((n) => ({ value: String(n) as "8" | "16" | "32" | "64", label: String(n) }))}
-              onChange={(size) => onConfig({ ...config, tournament: { size: Number(size) as TournamentSize } })}
-            />
-            <Select
-              label="Heats are played as"
-              value={config.mode}
-              options={listModes().map((m) => ({ value: m.id, label: m.label }))}
-              onChange={(id) => {
-                onConfig({ ...config, ...modeDefaults(id), tournament, track: undefined, map: undefined });
-                onDisplay({ ...display, camera: getMode(id).defaultCamera });
+              label="Países en el torneo"
+              value={String(tournament.size) as "8" | "16" | "20" | "32" | "64"}
+              options={TOURNAMENT_SIZES.map((n) => ({ value: String(n) as "8" | "16" | "20" | "32" | "64", label: n === 20 ? "20 · América" : String(n) }))}
+              onChange={(size) => {
+                if (size === "20") {
+                  onConfig({ ...config, ...modeDefaults("last-place-elimination"), tournament: { size: 20 }, continuous: undefined, maxParticipants: 20, track: undefined, map: undefined });
+                  onSelection(selectPreset("americas-20", countries, selection));
+                  onDisplay({ ...display, camera: getMode("last-place-elimination").defaultCamera });
+                } else onConfig({ ...config, tournament: { size: Number(size) as TournamentSize } });
               }}
             />
           </>
         )}
-        {!tournament && <p className="text-xs leading-relaxed text-zinc-500">{mode.description}</p>}
+        {!tournament && <p className="text-xs leading-relaxed text-zinc-500">{continuous
+          ? "El último queda eliminado y los supervivientes pasan a otro mapa en cada ronda: Plinko, obstáculos, anillos y más. Continúa hasta quedar un campeón."
+          : config.mode === "last-place-elimination" ? "El último queda eliminado en cada ronda. Los supervivientes vuelven a competir en el mismo mapa hasta quedar un ganador." : mode.description}</p>}
         <Select
-          label={config.mode === "last-place-elimination" ? (tournament ? "Heat map" : "Map") : tournament ? "Heat scenario" : "Scenario"}
+          label={continuous ? "Primer mapa" : config.mode === "last-place-elimination" ? (tournament ? "Mapa de grupos y final" : "Mapa") : tournament ? "Escenario de grupos y final" : "Escenario"}
           value={scenario?.id ?? ""}
           options={mode.scenarios.map((s) => ({ value: s.id, label: s.label }))}
           onChange={(id) => onConfig({ ...config, scenario: id })}
         />
         {scenario && <p className="text-xs text-zinc-500">{scenario.description}</p>}
+        {continuous && <p className="text-xs text-zinc-400">Después del primer mapa, los mapas cambian automáticamente sin repetir hasta completar la vuelta.</p>}
         {config.mode === "last-place-elimination" && (
           <Segmented
-            label="Eliminations"
+            label="Ritmo de eliminación"
             value={config.elimination ?? "batch"}
             options={[
-              { value: "batch", label: "Shorts (fast)" },
-              { value: "single", label: "One per round" },
+              { value: "batch", label: "Rápido · por tandas" },
+              { value: "single", label: "Uno por ronda" },
             ]}
             onChange={(elimination) => onConfig({ ...config, elimination })}
           />
@@ -131,6 +131,21 @@ export function ControlPanel({
             {findMap(config.map) && <p className="text-xs text-zinc-500">{findMap(config.map)?.description}</p>}
           </>
         )}
+        {!continuous && tournament?.size !== 20 && <details className="rounded-lg border border-white/[0.06] p-3">
+          <summary className="cursor-pointer text-xs text-zinc-400">Otras reglas de juego</summary>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-zinc-500">Last Place reúne pistas, obstáculos y anillos con la misma regla. Aquí puedes usar los juegos clásicos.</p>
+            <Select
+              label="Reglas"
+              value={config.mode}
+              options={listModes().map((m) => ({ value: m.id, label: m.label }))}
+              onChange={(id) => {
+                onConfig({ ...config, ...modeDefaults(id), tournament, continuous: undefined, track: undefined, map: undefined });
+                onDisplay({ ...display, camera: getMode(id).defaultCamera });
+              }}
+            />
+          </div>
+        </details>}
       </Section>
 
       {(config.mode === "race" || config.mode === "marble-race") && !findMap(config.map)?.arena && <TrackEditor config={config} onConfig={onConfig} />}
@@ -152,11 +167,12 @@ export function ControlPanel({
               : selection.selected.length > config.maxParticipants && `, ${participants} take part (seeded sample)`}
           </span>
         </p>
+        {tournament?.size === 20 && <p className="text-xs text-zinc-400">Puedes cambiar cualquiera de los 20 participantes. Usa Edit selection; el torneo sólo acepta países de América.</p>}
         <PresetChips countries={countries} state={selection} onChange={onSelection} />
         {tournament ? (
-          selection.selected.length < tournament.size && (
+          (selection.selected.length < tournament.size || (tournament.size === 20 && selection.selected.length !== 20)) && (
             <p className="text-xs text-amber-300/80">
-              Select at least {tournament.size} countries for a {tournament.size}-country tournament.
+              {tournament.size === 20 ? "Selecciona exactamente 20 países de América." : `Select at least ${tournament.size} countries for a ${tournament.size}-country tournament.`}
             </p>
           )
         ) : (
@@ -180,7 +196,7 @@ export function ControlPanel({
             onChange={(e) => onConfig({ ...config, seed: e.target.value })}
             aria-label="Seed"
           />
-          <Button onClick={() => onConfig({ ...config, seed: generateSeed(tournament ? "cup" : seedPrefix(config.mode)) })} title="Random seed">
+          <Button onClick={() => onConfig({ ...config, seed: generateSeed(tournament ? "cup" : continuous ? "tour" : seedPrefix(config.mode)) })} title="Random seed">
             ⟳
           </Button>
         </div>
@@ -219,7 +235,7 @@ export function ControlPanel({
         </p>
         <Select label="Camera" value={display.camera} options={CAMERA_OPTIONS} onChange={(camera) => show({ camera })} />
         <Toggle label="Dynamic zoom" checked={display.dynamicZoom} onChange={(dynamicZoom) => show({ dynamicZoom })} />
-        <Slider label="Playback speed" value={display.speed} min={0.25} max={4} step={0.25} onChange={(speed) => show({ speed })} format={(v) => `${v}×`} />
+        <Slider label="Preview speed (video 1×)" value={display.speed} min={0.25} max={4} step={0.25} onChange={(speed) => show({ speed })} format={(v) => `${v}×`} />
         <Segmented
           label="Theme"
           value={display.theme}

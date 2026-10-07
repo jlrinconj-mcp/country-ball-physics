@@ -96,7 +96,7 @@ export function validateSpec(input: unknown): JobSpec {
   if (!spec?.source || !["race", "marble-race", "last-country-standing", "last-place-elimination", "elimination-drop", "tournament", "random"].includes(spec.source.mode)) {
     throw new Error("Source must use an existing simulation mode");
   }
-  if (spec.source.seed && !/^[a-zA-Z0-9_-]{1,100}$/.test(spec.source.seed)) throw new Error("Unsafe source seed");
+  if (spec.source.seed !== undefined && (typeof spec.source.seed !== "string" || !/^[a-zA-Z0-9_-]{1,100}$/.test(spec.source.seed))) throw new Error("Unsafe source seed");
   if (spec.source.format && spec.source.format !== "9:16") throw new Error("Render the source in 9:16; choose other formats per variant");
   if (spec.source.maxDuration !== undefined && (!Number.isFinite(spec.source.maxDuration) || spec.source.maxDuration <= 0 || spec.source.maxDuration > 1800)) throw new Error("Invalid maxDuration");
   if (spec.renderScale !== undefined && (!Number.isFinite(spec.renderScale) || spec.renderScale < 0.1 || spec.renderScale > 1)) throw new Error("Invalid renderScale");

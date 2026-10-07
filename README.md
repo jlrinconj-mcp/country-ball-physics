@@ -21,6 +21,8 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 
 ## Modes
 
+The main competition selector has three formats, all using Last Place by default: **Partida** repeats one map, **Torneo** plays groups followed by a final of group winners, and **Carrera continua** takes the surviving countries to a different map each round until one champion remains. Continuous races start on the chosen map, then rotate through the short tracks and ring arenas without repeating a map until the rotation is complete (`config.continuous: true`). The classic games below remain available under **Otras reglas de juego** for single games and tournaments.
+
 | Mode | What happens | Scenarios |
 | --- | --- | --- |
 | **Last Country Standing** | Everyone starts inside spinning rings. Escape the outer ring and you're out; the last country inside wins. Gaps widen over time, so every run ends. | Spinning Ring · Double Ring · Triple Ring |
@@ -28,7 +30,7 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 | **Elimination Drop** | Plinko rounds: countries drop through pegs, bumpers and spinners into wide, deep boxes. Green boxes survive, red ones are out; a ball is judged once it has landed, so nobody bounces from a green box into a red one. Survivors go back to the top with fewer safe boxes, until one is left. A round ends when every ball has landed (about 9–13 s), never on the clock. | Classic Plinko · Bumper Frenzy · Spinners · Tall Board |
 | **Marble Race** | A marble run of ramps, tunnels, wheels, funnels, bottlenecks and moving platforms. | Grand Prix · Switchbacks · Machines |
 | **Last Place Elimination** | "32 COUNTRIES / LAST PLACE IS ELIMINATED". Every round the whole field races one map; crossing the line makes a country safe (it leaves the track and waits), and the ones still on the course when the safe places run out are eliminated. With a big field the back third goes out each round ("LAST 11 ARE ELIMINATED"), then one a round from the final five, so 32 countries play in about 1:30 and 195 in about 2 min, right for Shorts and Reels; "One per round" (`elimination: "single"`, `--elimination=single`) keeps the long format for live streams (32 countries ≈ 6 min). Everyone restarts from a new seeded position each round, through FINAL 5, FINAL 3 and the FINAL ROUND. The camera follows the fight for last place. On the ring arenas, escaping the rings is the finish and the last one trapped inside is out. A round ends if and only if every safe place has been taken: there is no time limit, stuck balls get kicked and, as a last resort, drop through whatever holds them. | All 18 maps (Grand Gauntlet is the long tournament course): Plinko · Pinball · Zigzag · Funnel · Spinner · Drop · Marble Run · Hammer Alley · Crushers · Trapdoors · Tumbler · Vortex · Hurdles · Obstacle Mix · Grand Gauntlet · Spinning Ring · Double Ring · Triple Ring |
-| **Tournament** | 8, 16, 32 or 64 countries. A seeded draw splits them into heats of up to 8, played in any mode above; the best of each heat advance to a final. | Any mode / scenario |
+| **Tournament** | 8, 16, 32 or 64 countries in groups of up to eight; only the first-place country in each group reaches the final. The 20-country American preset uses four groups of five and a final of four winners in **Last Place Elimination**. Seeded draw and results. | Any mode / scenario; the 20-country format fixes the heat mode |
 
 ## Features
 
@@ -45,9 +47,9 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 - **Minimal HUD on the canvas:** headline, counter, event line ("FRANCE IS OUT"), leader, timer, countdown and round banners, optional live ranking, winner and champion screens.
 - **Audio:** synthesized impacts, bounces, bumpers, eliminations, lead changes, finishes, countdown and victory. Pooled buffers, per-sound cooldowns, a collision budget and a voice cap.
 - **Video language:** English or Spanish for everything drawn on the video (titles, HUD, countdown "¡YA!", winner card, country names via the runtime's ICU data). Display-only: the same seed gives the same result in any language. `--lang=es` in the CLI sets the video text as well as the titles, captions and hashtags.
-- **Record video:** one click replays the simulation from tick 0 and downloads a full-resolution MP4 (or WebM), always with sound (even with sound effects off for live viewing).
+- **Manual configuration and recording:** configure one run and play it with **Ver vista previa** before saving anything. **Grabar video** starts a local deterministic MP4 export with sound, with pause/resume and delete controls throughout creation. **Mis videos** presents saved recordings as folders with in-app playback and downloads. Each part is at most 120 seconds; cuts preserve the current heat's physics, camera and audio state.
 - **Content factory:** `generateSimulation({ mode, countries, track, seed, format })` plus a batch CLI that writes metadata, titles, captions, hashtags and thumbnails.
-- **Country selector:** search, presets (All, continents, Random 16/32/64), continent and region filters, manual picks, exclusions and territories.
+- **Country selector:** search, presets (All, América, América · 20, continents, Random 16/32/64), continent and region filters, manual picks, exclusions and territories.
 - **Determinism check:** each run shows a result fingerprint, and replaying a config reports whether the result was identical.
 
 ## Tech stack
@@ -62,18 +64,20 @@ Pick a mode, a set of countries and a seed, then press play. **The same configur
 
 ## Getting started
 
-Requires Node.js 22 or newer.
+Requires Node.js 22.12 or newer. Recording from the application also requires FFmpeg and ffprobe on PATH (the existing CLI uses the same tools).
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000. A simulation starts automatically as soon as the country data loads.
+Open http://localhost:3000. The initial preview is paused. Choose a mode, countries, scenario/map or custom race track, seed, physics, video format and language. Review **Configuración del video**, then press **Ver vista previa** to watch without creating a video. When ready, **Grabar video** restarts from the beginning and saves the MP4 locally. Pause/resume controls affect both the screen and the export; deleting an active recording cancels its worker and removes its files. **Mis videos** opens the in-app library of folders with playback and downloads of videos and JSON metadata for manual upload. Nothing is published by this workflow.
 
-Keyboard shortcuts: `Space` pause/resume · `R` restart · `N` new seed · `G` generate · `.` step one tick (while paused).
+Under **Torneo**, choose **20 · América** for an editable selection representing North America, Central America, the Caribbean and South America. It requires exactly 20 American sovereign countries, plays four groups of five in Last Place Elimination, and advances each group winner to the final of four. See [the manual recording guide](docs/grabacion-manual.md).
 
-Buttons: **Generate Simulation** (apply the settings) · **Restart** (same run from tick 0) · **Replay Same Seed** (last seed with the current settings) · **New Seed** · **Record video**.
+Keyboard shortcuts: `Space` pause/resume playback, or start a preview after completion · `R` restart a paused preview · `N` choose a new seed · `G` play a preview · `.` inspect one tick. Recording always starts with **Grabar video**. When the competition finishes, playback stops automatically; **guardando video** means the remaining frames are still being encoded. The editor unlocks when saving completes or fails.
+
+Exports live in `output/manual/<id>/`: `part-001.mp4`, `part-001.json`, additional numbered parts and `metadata.json`. They stay in the download library after reloading. Export uses the existing renderer at full resolution/30 FPS and always includes synthesized sound. Preview speed, pauses, safe-area guides and browser throttling do not affect the exported result. Keep the local server running until encoding finishes; full-resolution rendering can take longer than playback. A stopped worker is reported as interrupted and the same configuration/seed can be recorded again.
 
 | Script | What it does |
 | --- | --- |
@@ -109,7 +113,7 @@ Chat sources:
 | Bridge (TikTok Live and anything else) | Send chat to `POST /api/live/messages` as `{"user":"…","text":"…"}` (or `nickname`/`comment`, lists, `"kind":"gift"`), or `GET /api/live/messages?user=…&text=…`. TikFinity and Streamer.bot can call it on every TikTok comment or gift. Set `LIVE_BRIDGE_TOKEN` to require `?token=…`. |
 | Test | Type as any viewer, or add 10 bots, from the sidebar. |
 
-Boosts go through the engine as recorded inputs (`config.inputs`), so the simulation stays deterministic: after **Stop live**, **Record video** replays the last live game exactly, boosts included, ready to post as a Short.
+Boosts go through the engine as recorded inputs (`config.inputs`), so the simulation stays deterministic. Existing runtime integrations can call `SimulationController.record()` after stopping live to export the last game with its recorded boosts; ordinary Play records the draft currently chosen in the controls.
 
 ## Content factory
 
@@ -142,6 +146,8 @@ npm run generate -- --mode=race --video --headline="PICK YOUR FLAG"    # custom 
 Each run writes `output/runs/<seed>/metadata.json` (request, config, result, tournament bracket, metadata) and `thumbnail.png`, and appends a line to `output/runs/index.jsonl`. Titles never contain the winner; the spoiler lives in `metadata.result`.
 
 ### Local generation, variants and social publishing
+
+To choose each video in the application and upload it manually to Instagram, TikTok and YouTube, follow [the first publication guide](docs/empezar-a-publicar.md). The batch CLI and the separate publishing pipeline below remain optional, separate workflows; Play does not call them.
 
 For bolworld's Linux workflow, see [the local video guide](docs/flujo-local-videos.md). It reuses this renderer, generates several FFmpeg variants, validates them, uploads through TikTok/Instagram/Facebook APIs and confirms publication before retaining files for at least 24 hours. A user systemd timer performs safe cleanup only inside `output/pipeline`; failed/unconfirmed uploads and manually created files are preserved.
 
@@ -178,7 +184,7 @@ npm run tournament -- --countries=europe --size=16 --heat-mode=marble-race --nam
 npm run tournament -- --spec=tournaments/custom-track.json --frames=30            # PNG frames of the final
 ```
 
-Spec fields: `name`, `seed`, `countries` (`"all"`, a preset, a continent or ISO codes), `size` (8/16/32/64), `heatMode`, `heatScenario` (or `"random"`), `track` (custom module sequence for race heats), `physics` overrides, `maxDuration`, `format`, `language`, `includeTerritories`. Invalid specs fail with a list of what to fix. Each run writes `output/tournaments/<seed>/` with `bracket.md`, `bracket.json` (every heat's ranking, qualifiers, duration and fingerprint), `metadata.json` and `heats/*.png`. Examples live in [`tournaments/`](tournaments).
+Spec fields: `name`, `seed`, `countries` (`"all"`, a preset, a continent or ISO codes), `size` (8/16/20/32/64), `heatMode`, `heatScenario` (or `"random"`), `track` (custom module sequence for race heats), `physics` overrides, `maxDuration`, `format`, `language`, `includeTerritories`. Size 20 requires exactly 20 sovereign American countries and Last Place Elimination (the default for this size). See `tournaments/americas-20.json`. Invalid specs fail with a list of what to fix. Each run writes `output/tournaments/<seed>/` with `bracket.md`, `bracket.json` (every heat's ranking, qualifiers, duration and fingerprint), `metadata.json` and `heats/*.png`. Examples live in [`tournaments/`](tournaments).
 
 ## Smoothness guarantees
 
@@ -187,7 +193,7 @@ Spec fields: `name`, `seed`, `countries` (`"all"`, a preset, a continent or ISO 
 - no ball sits still for more than 4 s (an anti-stall nudge kicks in at 3 s), and balls crawl (< 120 px/s) less than 12% of the time
 - no ball tunnels out of the track, and no ball moves much more than its speed cap in one tick (no teleports)
 - more gravity always makes races faster
-- cameras never jump more than 8% of the frame per 1/60 s, and follow cameras keep the leader in shot (Last Place Elimination: the country in last place); a new round is a cut, not a pan
+- cameras never jump more than 8% of the frame per 1/60 s; Follow leader keeps the first country still racing in shot, while Follow action frames the fight for last place in Last Place Elimination; a new round is a cut, not a pan
 - no track module leaves a corridor, and Elimination Drop and Last Place Elimination rounds stay at 8–15 s
 - the loop plays in real time at 144, 60, 30, 5 and even 1.5 FPS, drops long stalls instead of fast-forwarding, and never spirals when the CPU can't keep up
 
@@ -243,8 +249,9 @@ src/
     rounds.ts          RoundManager: intro → racing → result → next round
   tracks/              generateTrack(), the 14 track modules, peg grid, corridor detector, map registry, course path
   render/              Canvas renderer, HUD, flag atlas, formats, safe areas, themes
-  audio/               Synthesized, rate-limited sounds: Web Audio engine (live, recordings) and offline mixer (CLI videos, same sounds on simulated time)
+  audio/               Synthesized, rate-limited sounds: Web Audio for previews/live and offline mix for exported videos
   content/             planSimulation, generateSimulation, metadata templates
+  export/              Manual export contracts, configuration validation, continuous timeline and local encoder worker
   live/                Live mode: chat commands, country matching, LiveSession (lobby → game → results, points), Twitch / YouTube / bridge chat sources
   runtime/             SimulationController (engine ↔ canvas ↔ React), video recorder
   components/          React UI (control panel, track editor, selector, live panel)
